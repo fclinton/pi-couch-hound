@@ -4,23 +4,37 @@ A Raspberry Pi-powered dog detector that catches your furry couch potato in the 
 
 ## Overview
 
-Pi Couch Hound uses a camera connected to a Raspberry Pi to continuously monitor a couch (or any forbidden zone). When a dog is detected in the frame, the system triggers a configurable chain of actions: playing a sound, sending a notification, running an arbitrary script, or activating GPIO-connected devices. Everything is configured through a single YAML file and managed via a lightweight local web dashboard.
+Pi Couch Hound uses a camera connected to a Raspberry Pi to continuously monitor a couch (or any forbidden zone). When a dog is detected in the frame, the system triggers a configurable chain of actions: playing a sound, sending a notification, running an arbitrary script, or activating GPIO-connected devices.
+
+The system is split into a **Python backend** (FastAPI) that handles detection and actions, and a **React TypeScript frontend** (Vite + React) that serves as the single control surface for all configuration, monitoring, and management. There is no need to edit YAML files by hand — everything is driven from the browser.
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐     ┌─────────────┐
-│  Pi Camera  │────▶│  Frame Grab  │────▶│  Dog Detector  │────▶│  Action     │
-│  / USB Cam  │     │  Loop        │     │  (TFLite)      │     │  Dispatcher │
-└─────────────┘     └──────────────┘     └────────────────┘     └──────┬──────┘
-                                                                       │
-                                              ┌────────────────────────┼────────────┐
-                                              │            │           │            │
-                                         ┌────▼───┐  ┌────▼───┐  ┌───▼────┐  ┌───▼────┐
-                                         │ Sound  │  │ Script │  │ Notify │  │  GPIO  │
-                                         │ Player │  │ Runner │  │ (MQTT/ │  │ Output │
-                                         └────────┘  └────────┘  │ HTTP)  │  └────────┘
-                                                                  └────────┘
+                        ┌──────────────────────────────────────────┐
+                        │           React TS Frontend              │
+                        │  (Vite SPA served by FastAPI static)     │
+                        │                                          │
+                        │  ┌──────────┐ ┌────────┐ ┌───────────┐  │
+                        │  │ Live View│ │ Events │ │  Settings │  │
+                        │  │ + ROI    │ │ Log    │ │  (all cfg)│  │
+                        │  └────┬─────┘ └───┬────┘ └─────┬─────┘  │
+                        └───────┼───────────┼─────────────┼────────┘
+                           WSS  │    REST   │      REST   │
+                        ┌───────┼───────────┼─────────────┼────────┐
+                        │       ▼           ▼             ▼        │
+                        │            FastAPI Backend                │
+                        │                                          │
+                        │  ┌─────────┐  ┌──────────┐  ┌────────┐  │
+                        │  │ Camera  │  │ Detector │  │ Action │  │
+                        │  │ Grabber │─▶│ (TFLite) │─▶│ Disp.  │  │
+                        │  └─────────┘  └──────────┘  └───┬────┘  │
+                        │                                  │       │
+                        │       ┌──────┬──────┬──────┬─────┘       │
+                        │       ▼      ▼      ▼      ▼            │
+                        │    Sound  Script   HTTP   GPIO           │
+                        │    Player Runner  /MQTT   Out            │
+                        └──────────────────────────────────────────┘
 ```
 
 ### Components
@@ -30,9 +44,11 @@ Pi Couch Hound uses a camera connected to a Raspberry Pi to continuously monitor
 | **Frame Grabber** | Captures frames from the camera at a configurable interval |
 | **Dog Detector** | Runs a TFLite object-detection model to identify dogs in a frame |
 | **Cooldown Manager** | Prevents action spam by enforcing a minimum interval between triggers |
-| **Action Dispatcher** | Evaluates which actions to fire and executes them (sequentially or in parallel) |
+| **Action Dispatcher** | Evaluates which actions to fire and executes them |
 | **Event Logger** | Records every detection event with timestamp, confidence, and snapshot |
-| **Web Dashboard** | Local Flask app for live view, event history, and configuration |
+| **Config Manager** | Loads, validates, persists, and hot-reloads `config.yaml` via API |
+| **FastAPI Backend** | REST API + WebSocket for the React frontend |
+| **React Frontend** | SPA for live view, event history, and full system configuration |
 
 ## Detection Engine
 
@@ -40,7 +56,7 @@ Pi Couch Hound uses a camera connected to a Raspberry Pi to continuously monitor
 
 - **Default model:** MobileNet SSD v2 (COCO) compiled to TensorFlow Lite — already knows the `dog` class out of the box, runs comfortably on a Pi 4/5 with no accelerator.
 - **Optional accelerator:** Google Coral USB TPU via `tflite_runtime` Edge TPU delegate for higher FPS.
-- **Custom model support:** Users can drop in any TFLite model and map its label index via config.
+- **Custom model support:** Users can upload any TFLite model + labels file through the web UI and map its label index via the settings page.
 
 ### Detection Pipeline
 
@@ -64,20 +80,25 @@ if detection passes filters AND cooldown has elapsed:
     → dispatch actions
     → log event
     → save snapshot
+    → push event via WebSocket to connected clients
 ```
 
 ### Region of Interest (ROI)
 
-Users can optionally define a polygon ROI in the config (or draw it on the web dashboard). A detection only triggers actions if the dog's bounding box overlaps the ROI by a configurable percentage. This prevents false triggers when the dog walks past the couch versus being *on* it.
+Users draw a polygon ROI directly on the live camera feed in the React UI. A detection only triggers actions if the dog's bounding box overlaps the ROI by a configurable percentage. This prevents false triggers when the dog walks past the couch versus being *on* it.
 
 ## Configuration
 
-All configuration lives in a single `config.yaml` at the project root.
+### Storage
+
+All configuration lives in `config.yaml` at the project root, but users **never need to edit it by hand**. The React settings UI is the primary interface — every save writes back to the YAML and hot-reloads the detection pipeline.
+
+### Schema
 
 ```yaml
 # ── Camera ──────────────────────────────────────────
 camera:
-  source: 0                    # 0 = Pi camera, or /dev/video1, or an RTSP URL
+  source: 0                    # 0 = Pi camera, /dev/video1, or RTSP URL
   resolution: [1280, 720]
   capture_interval: 0.5        # seconds between frame captures
 
@@ -85,17 +106,17 @@ camera:
 detection:
   model: models/ssd_mobilenet_v2.tflite
   labels: models/coco_labels.txt
-  target_label: dog             # what to detect
-  confidence_threshold: 0.60    # minimum confidence to trigger
-  use_coral: false              # enable Coral TPU delegate
-  roi:                          # optional region of interest (normalized 0-1 coords)
+  target_label: dog
+  confidence_threshold: 0.60
+  use_coral: false
+  roi:
     enabled: false
     polygon: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
-    min_overlap: 0.3            # fraction of bbox that must overlap ROI
+    min_overlap: 0.3
 
 # ── Cooldown ────────────────────────────────────────
 cooldown:
-  seconds: 30                  # minimum gap between triggers
+  seconds: 30
 
 # ── Actions ─────────────────────────────────────────
 actions:
@@ -103,13 +124,13 @@ actions:
     type: sound
     enabled: true
     sound_file: sounds/get_off_couch.wav
-    volume: 80                 # 0-100
+    volume: 80
 
   - name: take_snapshot
     type: snapshot
     enabled: true
     save_dir: snapshots/
-    max_kept: 500              # auto-prune oldest when exceeded
+    max_kept: 500
 
   - name: notify_phone
     type: http
@@ -132,28 +153,27 @@ actions:
     type: script
     enabled: false
     command: ./scripts/activate_sprinkler.sh
-    timeout: 10                # kill script after N seconds
+    timeout: 10
 
   - name: gpio_buzzer
     type: gpio
     enabled: false
     pin: 17
-    mode: pulse                # pulse | toggle | momentary
-    duration: 2.0              # seconds (for pulse/momentary)
+    mode: pulse
+    duration: 2.0
 
-# ── Web Dashboard ───────────────────────────────────
+# ── Web Server ──────────────────────────────────────
 web:
-  enabled: true
   host: 0.0.0.0
   port: 8080
   auth:
     enabled: false
     username: admin
-    password: changeme         # plaintext here, hashed at runtime
+    password_hash: ""          # bcrypt hash, set via UI
 
 # ── Logging ─────────────────────────────────────────
 logging:
-  level: INFO                  # DEBUG | INFO | WARNING | ERROR
+  level: INFO
   file: logs/couch-hound.log
   max_size_mb: 50
   backup_count: 3
@@ -161,7 +181,7 @@ logging:
 
 ### Template Variables
 
-Action fields that accept strings support Jinja2-style template variables:
+Action fields that accept strings support template variables:
 
 | Variable | Description |
 |---|---|
@@ -174,7 +194,7 @@ Action fields that accept strings support Jinja2-style template variables:
 ## Action Types
 
 ### `sound`
-Plays an audio file through the Pi's audio output using `aplay` or `pygame.mixer`. Supports WAV and MP3.
+Plays an audio file through the Pi's audio output using `pygame.mixer`. Supports WAV and MP3. Users can upload sound files through the settings UI.
 
 ### `snapshot`
 Saves the detection frame as a JPEG to disk. Auto-prunes old snapshots when `max_kept` is exceeded (oldest deleted first).
@@ -186,84 +206,410 @@ Sends an HTTP request. Useful for push notifications (ntfy.sh, Pushover, IFTTT),
 Publishes a message to an MQTT broker. Designed for integration with Home Assistant, Node-RED, or any MQTT-based automation system.
 
 ### `script`
-Runs an arbitrary shell command or script. Executed in a subprocess with a configurable timeout to prevent hangs. The process is killed if it exceeds the timeout.
+Runs an arbitrary shell command or script. Executed in a subprocess with a configurable timeout to prevent hangs.
 
 ### `gpio`
 Drives a GPIO pin on the Pi. Three modes:
 - **pulse**: Set HIGH for `duration` seconds, then LOW.
 - **toggle**: Flip the current state.
-- **momentary**: Set HIGH, wait `duration`, set LOW (alias for pulse with explicit reset).
+- **momentary**: Set HIGH, wait `duration`, set LOW.
 
-## Web Dashboard
+## Backend API (FastAPI)
 
-A minimal Flask application served locally on the Pi.
+### REST Endpoints
 
-### Pages
+#### System
 
-| Route | Description |
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/status` | System status: uptime, detection count, last event, CPU/mem/temp |
+| `POST` | `/api/test-actions` | Fire all enabled actions once (testing without a real detection) |
+| `POST` | `/api/restart` | Restart the detection pipeline (no process restart) |
+
+#### Configuration — Full CRUD from the Web
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/config` | Return the full current configuration as JSON |
+| `PUT` | `/api/config` | Replace the entire configuration, validate, persist to YAML, hot-reload |
+| `PATCH` | `/api/config/:section` | Partially update a config section (`camera`, `detection`, `cooldown`, `actions`, `web`, `logging`) |
+
+#### Actions — Manage Individual Actions
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/actions` | List all configured actions |
+| `POST` | `/api/actions` | Create a new action |
+| `PUT` | `/api/actions/:name` | Update an existing action |
+| `DELETE` | `/api/actions/:name` | Remove an action |
+| `POST` | `/api/actions/:name/test` | Test-fire a single action |
+| `PATCH` | `/api/actions/:name/toggle` | Enable/disable an action |
+
+#### Events
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/events` | Paginated event list (`?limit=`, `?offset=`, `?since=`, `?until=`) |
+| `GET` | `/api/events/:id` | Single event detail |
+| `DELETE` | `/api/events/:id` | Delete an event and its snapshot |
+| `DELETE` | `/api/events` | Bulk delete events (`?before=` timestamp) |
+| `GET` | `/api/events/stats` | Aggregate stats: detections per hour/day, peak times, avg confidence |
+
+#### Snapshots
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/snapshots/:filename` | Serve a snapshot image |
+
+#### File Uploads
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/upload/sound` | Upload a sound file (WAV/MP3) to `sounds/` |
+| `POST` | `/api/upload/model` | Upload a custom TFLite model + labels to `models/` |
+| `GET` | `/api/sounds` | List available sound files |
+| `GET` | `/api/models` | List available TFLite models |
+
+#### ROI
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/roi` | Get the current ROI polygon |
+| `PUT` | `/api/roi` | Save a new ROI polygon (from the canvas editor) |
+| `DELETE` | `/api/roi` | Clear the ROI (disable zone filtering) |
+
+#### Auth
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/auth/login` | Authenticate, returns a JWT |
+| `POST` | `/api/auth/change-password` | Update password (requires current password) |
+| `GET` | `/api/auth/status` | Check if auth is enabled and if the current session is valid |
+
+### WebSocket
+
+| Endpoint | Description |
 |---|---|
-| `GET /` | Live camera feed (MJPEG stream) with detection overlay and status |
-| `GET /events` | Paginated event history with thumbnails, timestamps, and confidence |
-| `GET /events/:id` | Single event detail with full snapshot |
-| `GET /config` | View/edit `config.yaml` through a form UI |
-| `POST /config` | Save updated config and hot-reload the detection loop |
-| `GET /api/status` | JSON: uptime, detection count, last event, system stats |
-| `GET /api/events` | JSON: event list (supports `?limit=`, `?offset=`, `?since=`) |
-| `POST /api/test` | Fire all enabled actions once (for testing without a real detection) |
+| `WS /ws/stream` | Live MJPEG frames as binary messages with detection bounding box overlay |
+| `WS /ws/events` | Real-time detection event push (JSON messages) |
+| `WS /ws/status` | Periodic system status updates (CPU, mem, temp, FPS, detection state) |
 
-### Live View
+## React TypeScript Frontend
 
-The live view streams MJPEG from the camera with bounding boxes drawn over detected dogs. Users can draw/edit the ROI polygon directly on the video feed.
+### Tech Stack
 
-## Project Structure
+| Tool | Purpose |
+|---|---|
+| **Vite** | Build tooling and dev server |
+| **React 18** | UI framework |
+| **TypeScript** | Type safety |
+| **React Router** | Client-side routing |
+| **TanStack Query** | Server state management, caching, and mutations |
+| **Zustand** | Lightweight client state (WebSocket connection, UI state) |
+| **Tailwind CSS** | Utility-first styling |
+| **shadcn/ui** | Accessible component primitives (forms, dialogs, toasts) |
+| **Recharts** | Event statistics charts |
+
+### Pages & Routes
+
+| Route | Page | Description |
+|---|---|---|
+| `/` | **Dashboard** | Live camera feed with detection overlay, system status cards, recent events ticker |
+| `/events` | **Events** | Filterable, paginated event table with snapshot thumbnails. Click to expand detail view. Bulk delete controls. |
+| `/events/:id` | **Event Detail** | Full snapshot, bounding box visualization, metadata, actions fired |
+| `/events/stats` | **Statistics** | Charts: detections per hour/day, confidence distribution, peak activity times |
+| `/settings` | **Settings** | Tabbed settings panel (see below) |
+| `/settings/actions` | **Action Builder** | Visual action editor — add, edit, delete, reorder, test, toggle actions |
+| `/login` | **Login** | Auth form (only shown when auth is enabled) |
+
+### Settings Page — Tabs
+
+The settings page is the central control panel. Every field maps to a `config.yaml` key and changes are applied live via `PATCH /api/config/:section`.
+
+#### Camera Tab
+
+| Control | Type | Maps to |
+|---|---|---|
+| Camera source | Text input + dropdown (Pi cam / USB / RTSP) | `camera.source` |
+| Resolution | Preset dropdown (480p, 720p, 1080p) + custom | `camera.resolution` |
+| Capture interval | Slider (0.1–5.0s) | `camera.capture_interval` |
+| Preview | Live thumbnail showing current camera output | — |
+
+#### Detection Tab
+
+| Control | Type | Maps to |
+|---|---|---|
+| Model | Dropdown of uploaded models | `detection.model` |
+| Labels file | Auto-paired with model | `detection.labels` |
+| Upload model | File upload (`.tflite` + `.txt`) | — |
+| Target label | Dropdown populated from labels file | `detection.target_label` |
+| Confidence threshold | Slider (0.0–1.0) with live preview of detections at current threshold | `detection.confidence_threshold` |
+| Use Coral TPU | Toggle switch | `detection.use_coral` |
+
+#### ROI Tab
+
+| Control | Type | Maps to |
+|---|---|---|
+| Enable ROI | Toggle switch | `detection.roi.enabled` |
+| ROI editor | Canvas overlay on live feed — click to place polygon points, drag to adjust | `detection.roi.polygon` |
+| Min overlap | Slider (0.0–1.0) | `detection.roi.min_overlap` |
+| Clear ROI | Button | — |
+
+#### Actions Tab
+
+A card-based action builder:
+
+- Each action is a card showing its name, type, enabled state, and a summary of its config.
+- **Add Action** button opens a dialog with a type selector. Selecting a type shows the relevant form fields.
+- Each card has: **Edit** (inline expand), **Test** (fire once), **Toggle** (enable/disable), **Delete** (with confirmation).
+- Drag-to-reorder controls execution order.
+
+Per-type form fields:
+
+| Type | Fields |
+|---|---|
+| `sound` | Sound file (dropdown of uploaded files + upload button), volume slider |
+| `snapshot` | Save directory, max kept (number input) |
+| `http` | URL, method dropdown, headers (key-value editor), body (textarea with template var autocomplete) |
+| `mqtt` | Broker host, port, topic, payload (textarea with template var autocomplete) |
+| `script` | Command (text input), timeout slider |
+| `gpio` | Pin number, mode dropdown, duration slider |
+
+#### Cooldown Tab
+
+| Control | Type | Maps to |
+|---|---|---|
+| Cooldown period | Slider (0–300s) + number input | `cooldown.seconds` |
+
+#### System Tab
+
+| Control | Type | Maps to |
+|---|---|---|
+| Log level | Dropdown (DEBUG/INFO/WARNING/ERROR) | `logging.level` |
+| Log file max size | Number input (MB) | `logging.max_size_mb` |
+| Log backup count | Number input | `logging.backup_count` |
+| Enable auth | Toggle | `web.auth.enabled` |
+| Change password | Password input + confirm | `web.auth.password_hash` |
+| Server port | Number input (requires restart) | `web.port` |
+| Restart pipeline | Button | — |
+| System info | Read-only: Pi model, OS, Python version, disk usage, uptime | — |
+
+### UI Components
+
+#### Live View (`/`)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ┌─────────────────────────────────┐  ┌───────────┐  │
+│  │                                 │  │  Status   │  │
+│  │      Live Camera Feed           │  │  ───────  │  │
+│  │      (WebSocket MJPEG)          │  │  FPS: 4.2 │  │
+│  │                                 │  │  CPU: 42% │  │
+│  │   ┌───────────┐                 │  │  Temp: 58°│  │
+│  │   │  DOG 0.92 │ ← bbox overlay │  │  Mem: 61% │  │
+│  │   └───────────┘                 │  │           │  │
+│  │   ┌─ ─ ─ ─ ─ ─ ─ ─┐           │  │  Today: 7 │  │
+│  │   ╎   ROI zone     ╎           │  │  detects  │  │
+│  │   └─ ─ ─ ─ ─ ─ ─ ─┘           │  │           │  │
+│  └─────────────────────────────────┘  └───────────┘  │
+│                                                      │
+│  Recent Events                                       │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐                │
+│  │thumb │ │thumb │ │thumb │ │thumb │ ← scrollable   │
+│  │14:23 │ │13:01 │ │11:45 │ │09:30 │                │
+│  │ 0.91 │ │ 0.87 │ │ 0.73 │ │ 0.95 │                │
+│  └──────┘ └──────┘ └──────┘ └──────┘                │
+└──────────────────────────────────────────────────────┘
+```
+
+#### Action Builder Card
+
+```
+┌─────────────────────────────────────────┐
+│  🔊 play_sound                    [ON] │
+│  ─────────────────────────────────────  │
+│  Sound: get_off_couch.wav              │
+│  Volume: ██████████░░ 80%              │
+│                                         │
+│  [Test ▶]     [Edit ✏️]     [Delete 🗑] │
+└─────────────────────────────────────────┘
+```
+
+### Frontend Project Structure
+
+```
+frontend/
+├── index.html
+├── vite.config.ts
+├── tsconfig.json
+├── tailwind.config.ts
+├── package.json
+│
+├── src/
+│   ├── main.tsx                    # App entry point
+│   ├── App.tsx                     # Router + layout
+│   │
+│   ├── api/
+│   │   ├── client.ts               # Axios/fetch wrapper with auth interceptor
+│   │   ├── config.ts               # Config API hooks (TanStack Query)
+│   │   ├── events.ts               # Events API hooks
+│   │   ├── actions.ts              # Actions API hooks
+│   │   ├── system.ts               # Status, upload, auth API hooks
+│   │   └── types.ts                # Shared API response types
+│   │
+│   ├── hooks/
+│   │   ├── useWebSocket.ts         # WebSocket connection manager
+│   │   ├── useStream.ts            # Live video stream hook
+│   │   └── useAuth.ts              # Auth state hook
+│   │
+│   ├── stores/
+│   │   └── appStore.ts             # Zustand store (connection state, UI prefs)
+│   │
+│   ├── pages/
+│   │   ├── Dashboard.tsx           # Live view + status + recent events
+│   │   ├── Events.tsx              # Event list page
+│   │   ├── EventDetail.tsx         # Single event view
+│   │   ├── EventStats.tsx          # Statistics / charts
+│   │   ├── Settings.tsx            # Settings shell with tabs
+│   │   └── Login.tsx               # Login form
+│   │
+│   ├── components/
+│   │   ├── layout/
+│   │   │   ├── Sidebar.tsx         # Navigation sidebar
+│   │   │   ├── Header.tsx          # Top bar with connection indicator
+│   │   │   └── Layout.tsx          # Shell layout
+│   │   │
+│   │   ├── live/
+│   │   │   ├── VideoFeed.tsx       # WebSocket MJPEG renderer
+│   │   │   ├── BboxOverlay.tsx     # Detection bounding box overlay
+│   │   │   └── RoiEditor.tsx       # Interactive polygon editor on canvas
+│   │   │
+│   │   ├── events/
+│   │   │   ├── EventTable.tsx      # Paginated event list
+│   │   │   ├── EventCard.tsx       # Single event summary card
+│   │   │   └── EventFilters.tsx    # Date range, confidence filters
+│   │   │
+│   │   ├── settings/
+│   │   │   ├── CameraSettings.tsx
+│   │   │   ├── DetectionSettings.tsx
+│   │   │   ├── RoiSettings.tsx
+│   │   │   ├── ActionsSettings.tsx
+│   │   │   ├── ActionCard.tsx      # Individual action config card
+│   │   │   ├── ActionForm.tsx      # Add/edit action dialog
+│   │   │   ├── CooldownSettings.tsx
+│   │   │   └── SystemSettings.tsx
+│   │   │
+│   │   ├── stats/
+│   │   │   ├── DetectionChart.tsx  # Detections over time
+│   │   │   └── ConfidenceChart.tsx # Confidence distribution
+│   │   │
+│   │   └── ui/                     # shadcn/ui primitives
+│   │       ├── button.tsx
+│   │       ├── card.tsx
+│   │       ├── dialog.tsx
+│   │       ├── input.tsx
+│   │       ├── select.tsx
+│   │       ├── slider.tsx
+│   │       ├── switch.tsx
+│   │       ├── table.tsx
+│   │       ├── tabs.tsx
+│   │       └── toast.tsx
+│   │
+│   └── lib/
+│       ├── utils.ts                # cn() helper, formatters
+│       └── templates.ts            # Template variable definitions for autocomplete
+│
+└── public/
+    └── favicon.svg
+```
+
+### Build & Deployment
+
+The React app is built into static files that are served directly by FastAPI:
+
+```bash
+cd frontend && npm run build    # outputs to frontend/dist/
+```
+
+FastAPI mounts the `dist/` directory as static files and serves `index.html` as a catch-all for client-side routing:
+
+```python
+# In backend
+app.mount("/", StaticFiles(directory="frontend/dist", html=True))
+```
+
+During development, Vite's dev server proxies API requests to the FastAPI backend:
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+      '/ws': { target: 'ws://localhost:8080', ws: true },
+    },
+  },
+});
+```
+
+## Project Structure (Full)
 
 ```
 pi-couch-hound/
-├── config.yaml                 # User configuration
-├── setup.py                    # Package setup
+├── config.yaml                     # User config (written by API, not hand-edited)
+├── config.example.yaml             # Example config shipped with repo
+├── pyproject.toml                  # Python package config
 ├── requirements.txt
 │
-├── couch_hound/
+├── couch_hound/                    # Python backend
 │   ├── __init__.py
-│   ├── main.py                 # Entry point & orchestration loop
-│   ├── camera.py               # Frame capture abstraction
-│   ├── detector.py             # TFLite inference wrapper
+│   ├── main.py                     # Entry point — starts FastAPI + detection loop
+│   ├── camera.py                   # Frame capture abstraction
+│   ├── detector.py                 # TFLite inference wrapper
 │   ├── actions/
-│   │   ├── __init__.py
-│   │   ├── base.py             # Action base class
+│   │   ├── __init__.py             # Action registry
+│   │   ├── base.py                 # Action base class
 │   │   ├── sound.py
 │   │   ├── snapshot.py
 │   │   ├── http_action.py
 │   │   ├── mqtt_action.py
 │   │   ├── script.py
 │   │   └── gpio.py
-│   ├── cooldown.py             # Cooldown manager
-│   ├── config.py               # YAML loading, validation, hot-reload
-│   ├── event_log.py            # SQLite-backed event store
-│   ├── roi.py                  # Region-of-interest geometry
-│   ├── templates.py            # Template variable rendering
-│   └── web/
+│   ├── cooldown.py                 # Cooldown manager
+│   ├── config.py                   # YAML load/save/validate/hot-reload
+│   ├── event_log.py                # SQLite-backed event store
+│   ├── roi.py                      # Region-of-interest geometry
+│   ├── templates.py                # Template variable rendering
+│   └── api/
 │       ├── __init__.py
-│       ├── app.py              # Flask app factory
-│       ├── routes.py           # Route handlers
-│       ├── stream.py           # MJPEG streaming
-│       ├── templates/
-│       │   ├── base.html
-│       │   ├── index.html
-│       │   ├── events.html
-│       │   └── config.html
-│       └── static/
-│           ├── style.css
-│           └── app.js          # ROI drawing, live status polling
+│       ├── app.py                  # FastAPI app factory
+│       ├── routes_config.py        # Config CRUD endpoints
+│       ├── routes_actions.py       # Action management endpoints
+│       ├── routes_events.py        # Event query endpoints
+│       ├── routes_system.py        # Status, uploads, auth
+│       ├── routes_roi.py           # ROI endpoints
+│       ├── websocket.py            # WebSocket handlers (stream, events, status)
+│       ├── auth.py                 # JWT auth middleware
+│       └── schemas.py              # Pydantic request/response models
 │
-├── models/                     # TFLite models (downloaded at setup)
+├── frontend/                       # React TypeScript frontend
+│   ├── index.html
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── tailwind.config.ts
+│   ├── package.json
+│   └── src/
+│       └── ...                     # (see Frontend Project Structure above)
+│
+├── models/
 │   └── .gitkeep
-├── sounds/                     # Audio files
+├── sounds/
 │   └── get_off_couch.wav
-├── scripts/                    # User-provided action scripts
+├── scripts/
 │   └── example.sh
-├── snapshots/                  # Detection snapshots (gitignored)
-├── logs/                       # Log files (gitignored)
+├── snapshots/                      # gitignored
+├── logs/                           # gitignored
+├── data/                           # SQLite db, gitignored
 │
 └── tests/
     ├── conftest.py
@@ -272,7 +618,10 @@ pi-couch-hound/
     ├── test_cooldown.py
     ├── test_config.py
     ├── test_roi.py
-    └── test_web.py
+    ├── test_api_config.py
+    ├── test_api_actions.py
+    ├── test_api_events.py
+    └── test_api_auth.py
 ```
 
 ## Data Storage
@@ -309,16 +658,36 @@ The database file lives at `data/events.db` (auto-created on first run).
 
 ## Software Dependencies
 
+### Backend (Python)
+
 ```
 python >= 3.9
-tflite-runtime           # TFLite inference (lighter than full TensorFlow)
+fastapi                   # API framework
+uvicorn                   # ASGI server
+tflite-runtime            # TFLite inference
 opencv-python-headless    # Frame capture, resize, drawing
-flask                     # Web dashboard
-pyyaml                    # Config parsing
-jinja2                    # Template rendering (bundled with Flask)
+pyyaml                    # Config persistence
+pydantic                  # Request/response validation
+python-jose[cryptography] # JWT auth tokens
+passlib[bcrypt]           # Password hashing
+python-multipart          # File uploads
 paho-mqtt                 # MQTT action (optional)
 RPi.GPIO                  # GPIO action (optional, Pi-only)
-pygame                    # Sound playback (alternative to aplay)
+pygame                    # Sound playback
+```
+
+### Frontend (Node.js)
+
+```
+node >= 18
+react, react-dom          # UI framework
+typescript                # Type safety
+vite                      # Build tool
+@tanstack/react-query     # Server state
+zustand                   # Client state
+react-router-dom          # Routing
+tailwindcss               # Styling
+recharts                  # Charts
 ```
 
 ## Installation & Running
@@ -328,7 +697,7 @@ pygame                    # Sound playback (alternative to aplay)
 git clone https://github.com/<user>/pi-couch-hound.git
 cd pi-couch-hound
 
-# Install
+# Backend
 python -m venv venv
 source venv/bin/activate
 pip install -e .
@@ -336,14 +705,27 @@ pip install -e .
 # Download default model
 python -m couch_hound.setup_model
 
-# Copy and edit config
+# Frontend
+cd frontend
+npm install
+npm run build
+cd ..
+
+# Copy example config (first run only)
 cp config.example.yaml config.yaml
-nano config.yaml
 
 # Run
-couch-hound              # installed entry point
-# or
-python -m couch_hound
+couch-hound                # opens on http://localhost:8080
+```
+
+### Development Mode
+
+```bash
+# Terminal 1: Backend with auto-reload
+uvicorn couch_hound.api.app:create_app --factory --reload --port 8080
+
+# Terminal 2: Frontend dev server (proxies API to :8080)
+cd frontend && npm run dev   # opens on http://localhost:5173
 ```
 
 ### systemd Service
@@ -367,13 +749,18 @@ WantedBy=multi-user.target
 
 ## Testing Strategy
 
-- **Unit tests:** Each module is tested in isolation — detector with pre-recorded frames, actions with mocked subprocess/network calls, cooldown with controlled timestamps.
+- **Backend unit tests:** Each module is tested in isolation — detector with pre-recorded frames, actions with mocked subprocess/network calls, cooldown with controlled timestamps.
+- **Backend API tests:** FastAPI `TestClient` for all endpoints, including config CRUD, action management, and auth flows.
+- **Frontend unit tests:** Vitest + React Testing Library for component behavior and hook logic.
 - **Integration tests:** End-to-end detection pipeline using fixture images containing dogs and non-dogs.
 - **Hardware mocks:** GPIO and camera modules are mocked in CI; real hardware tests run manually on a Pi.
-- **Test runner:** `pytest` with `pytest-cov` for coverage reporting.
 
 ```bash
+# Backend
 pytest tests/ -v --cov=couch_hound
+
+# Frontend
+cd frontend && npm test
 ```
 
 ## Future Considerations
@@ -386,3 +773,4 @@ These are explicitly **not** in scope for v1 but are worth noting:
 - **Cat mode** — detect cats too (the model already supports it, just change `target_label`).
 - **Scheduling** — only monitor during certain hours (e.g., when you're at work).
 - **Multi-zone ROI** — define multiple forbidden zones with different action sets.
+- **Mobile PWA** — add a service worker and manifest for installable mobile access.
