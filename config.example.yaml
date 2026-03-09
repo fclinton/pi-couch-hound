@@ -1,0 +1,54 @@
+# Pi Couch Hound Configuration
+# Copy this to config.yaml and edit, or configure everything from the web UI.
+
+# ── Camera ──────────────────────────────────────────
+camera:
+  source: 0                    # 0 = Pi camera, /dev/video1, or RTSP URL
+  resolution: [1280, 720]
+  capture_interval: 0.5        # seconds between frame captures
+
+# ── Detection ───────────────────────────────────────
+detection:
+  model: models/ssd_mobilenet_v2.tflite
+  labels: models/coco_labels.txt
+  target_label: dog
+  confidence_threshold: 0.60
+  use_coral: false
+  roi:
+    enabled: false
+    polygon: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
+    min_overlap: 0.3
+
+# ── Cooldown ────────────────────────────────────────
+cooldown:
+  seconds: 30
+
+# ── Actions ─────────────────────────────────────────
+actions:
+  - name: play_sound
+    type: sound
+    enabled: true
+    sound_file: sounds/get_off_couch.wav
+    volume: 80
+
+  - name: take_snapshot
+    type: snapshot
+    enabled: true
+    save_dir: snapshots/
+    max_kept: 500
+
+# ── Web Server ──────────────────────────────────────
+web:
+  host: 0.0.0.0
+  port: 8080
+  auth:
+    enabled: false
+    username: admin
+    password_hash: ""
+
+# ── Logging ─────────────────────────────────────────
+logging:
+  level: INFO
+  file: logs/couch-hound.log
+  max_size_mb: 50
+  backup_count: 3

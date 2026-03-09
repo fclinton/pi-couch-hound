@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pi-couch-hound"
+version = "0.1.0"
+description = "Raspberry Pi-powered dog detector for catching couch potato pups"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "opencv-python-headless>=4.8.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.6",
+    "paho-mqtt>=1.6.0",
+    "pygame>=2.5.0",
+]
+
+[project.optional-dependencies]
+coral = ["tflite-runtime>=2.14.0"]
+gpio = ["RPi.GPIO>=0.7.0"]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.25.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+
+[project.scripts]
+couch-hound = "couch_hound.main:run"
+
+[tool.setuptools.packages.find]
+include = ["couch_hound*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
