@@ -19,7 +19,15 @@ Pi Couch Hound — Raspberry Pi-powered dog detector that monitors a couch and t
 
 ### Backend
 
+This project requires Python >=3.12. Use the venv to ensure the correct version:
+
 ```bash
+# Create venv (first time only)
+python3.12 -m venv .venv
+
+# Activate venv
+source .venv/bin/activate
+
 # Install with dev dependencies
 pip install -e ".[dev]"
 
