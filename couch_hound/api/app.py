@@ -33,11 +33,13 @@ def create_app() -> FastAPI:
     )
 
     # Register API routes
+    from couch_hound.api.routes_actions import router as actions_router
     from couch_hound.api.routes_config import router as config_router
     from couch_hound.api.routes_system import router as system_router
 
     app.include_router(system_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
+    app.include_router(actions_router, prefix="/api")
 
     # Serve frontend static files if built
     frontend_dist = Path("frontend/dist")

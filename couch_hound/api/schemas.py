@@ -40,3 +40,8 @@ class ActionTestResponse(BaseModel):
     name: str
     success: bool
     message: str
+
+
+class ActionToggleResponse(BaseModel):
+    name: str
+    enabled: bool
