@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -99,9 +98,7 @@ def test_patch_unknown_section(config_client: TestClient):
 
 def test_patch_validation_error(config_client: TestClient):
     """PATCH with invalid values should return 422."""
-    response = config_client.patch(
-        "/api/config/camera", json={"capture_interval": 999.0}
-    )
+    response = config_client.patch("/api/config/camera", json={"capture_interval": 999.0})
     assert response.status_code == 422
 
 
