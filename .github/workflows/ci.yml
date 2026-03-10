@@ -41,7 +41,7 @@ jobs:
         run: ruff format --check couch_hound/ tests/
 
       - name: Type check with mypy
-        run: mypy couch_hound/ --ignore-missing-imports
+        run: python -m mypy couch_hound/
 
       - name: Run tests
         run: pytest tests/ -v --cov=couch_hound --cov-report=term-missing
