@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, load_config
 from couch_hound.pipeline import DetectionPipeline
 
@@ -21,8 +22,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.config = config
     app.state.config_path = CONFIG_PATH
 
-    # Start detection pipeline
+    # Create WebSocket connection manager
+    ws_manager = ConnectionManager()
+    app.state.ws_manager = ws_manager
+
+    # Start detection pipeline with WebSocket broadcasting
     pipeline = DetectionPipeline(config)
+    pipeline.set_connection_manager(ws_manager)
     app.state.pipeline = pipeline
     await pipeline.start()
 
@@ -45,10 +51,12 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_actions import router as actions_router
     from couch_hound.api.routes_config import router as config_router
     from couch_hound.api.routes_system import router as system_router
+    from couch_hound.api.websocket import router as ws_router
 
     app.include_router(system_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
     app.include_router(actions_router, prefix="/api")
+    app.include_router(ws_router)
 
     # Serve frontend static files if built
     frontend_dist = Path("frontend/dist")

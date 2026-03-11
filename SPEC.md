@@ -292,7 +292,80 @@ Drives a GPIO pin on the Pi. Three modes:
 |---|---|
 | `WS /ws/stream` | Live MJPEG frames as binary messages with detection bounding box overlay |
 | `WS /ws/events` | Real-time detection event push (JSON messages) |
-| `WS /ws/status` | Periodic system status updates (CPU, mem, temp, FPS, detection state) |
+| `WS /ws/status` | Periodic system status updates (CPU, mem, temp, pipeline state) |
+
+#### Streaming Architecture
+
+The backend uses **MJPEG over WebSocket** — each frame is an independently-decodable JPEG sent as a binary WS message. This was chosen over WebRTC because:
+- Zero additional dependencies (FastAPI WS + OpenCV `cv2.imencode` already in the project)
+- aiortc has documented performance issues on Raspberry Pi ARM
+- At the target frame rates, H.264 inter-frame compression provides minimal benefit
+- The `ConnectionManager` abstraction keeps transport behind `broadcast_frame(bytes)`, making it straightforward to swap to WebRTC in the future if needed
+
+**Decoupled frame rates:** The stream loop and detection loop run independently:
+- **Detection loop** runs at `camera.capture_interval` (default 0.5s = ~2 FPS). Grabs a frame, runs TFLite inference, filters by ROI, applies cooldown, dispatches actions. Updates a cached `last_detections` list after each pass.
+- **Stream loop** runs at ~15 FPS when clients are connected. Grabs a fresh frame, overlays the cached `last_detections` as bounding boxes, JPEG-encodes, and broadcasts to all `/ws/stream` clients. When no clients are connected, the loop idles (sleeps 0.5s between checks).
+
+Both loops share the same `Camera` instance and run as concurrent asyncio tasks within the pipeline.
+
+#### `/ws/stream` Protocol
+
+- **Transport:** Binary WebSocket messages
+- **Format:** Each message is a complete JPEG image (starts with `\xff\xd8`, ends with `\xff\xd9`)
+- **Frame rate:** ~15 FPS when pipeline is running and clients are connected
+- **Overlays:** Bounding boxes and confidence labels are burned into the JPEG by the backend (green rectangles with `"label 0.XX"` text)
+- **Flow:** Server-push only. Client keeps the connection alive by staying connected; no client-to-server messages required.
+- **Frontend implementation:** Receive binary message → `new Blob([data], {type: 'image/jpeg'})` → `URL.createObjectURL(blob)` → set as `<img src>`. Revoke the previous object URL on each frame to prevent memory leaks.
+
+#### `/ws/events` Protocol
+
+- **Transport:** Text WebSocket messages (JSON)
+- **Format:**
+  ```json
+  {
+    "timestamp": "2026-03-11T14:23:01.123456+00:00",
+    "label": "dog",
+    "confidence": 0.92,
+    "bbox": [0.12, 0.34, 0.56, 0.78]
+  }
+  ```
+- **Frequency:** Fires on each detection that passes cooldown (not every frame — only when actions are dispatched)
+- **`bbox`:** Normalized `[x1, y1, x2, y2]` coordinates in `[0, 1]` range
+
+#### `/ws/status` Protocol
+
+- **Transport:** Text WebSocket messages (JSON)
+- **Format:**
+  ```json
+  {
+    "cpu_percent": 42.1,
+    "memory_percent": 61.3,
+    "temperature": 58.2,
+    "pipeline_state": "running",
+    "detection_count": 7,
+    "last_detection_time": "2026-03-11T14:23:01.123456+00:00"
+  }
+  ```
+- **Frequency:** Every 2 seconds
+- **`temperature`:** Celsius from `/sys/class/thermal/thermal_zone0/temp`, or `null` if unavailable (non-Pi hardware)
+- **`pipeline_state`:** One of `"running"`, `"stopped"`, `"error"`
+
+#### Frontend WebSocket Implementation Guide
+
+Recommended hook pattern for the React frontend:
+
+1. **`useWebSocket(path, options?)`** — Generic reconnecting WebSocket hook:
+   - Build WS URL from `window.location` (`ws://` or `wss://` + host + path)
+   - Manage connect/disconnect in `useEffect`, cleanup on unmount
+   - Reconnect on close with exponential backoff (1s → 2s → 4s, capped at 30s)
+   - Return `{ connected, lastMessage }`
+
+2. **`useStream()`** — Wraps `useWebSocket('/ws/stream', { binary: true })`:
+   - On each binary message: create `Blob` → `URL.createObjectURL`
+   - Store current URL in ref, revoke previous URL to prevent memory leaks
+   - Expose `{ frameUrl: string | null, connected: boolean }`
+
+3. **`<VideoFeed />`** component — Uses `useStream()`, renders `<img src={frameUrl} />`
 
 ## React TypeScript Frontend
 
