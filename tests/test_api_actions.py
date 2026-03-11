@@ -149,13 +149,13 @@ def test_fire_action_script_success(empty_client: TestClient) -> None:
     assert data["success"] is True
 
 
-def test_fire_action_not_implemented(actions_client: TestClient) -> None:
-    # sound type is not implemented yet
+def test_fire_action_failure_returns_error(actions_client: TestClient) -> None:
+    # sound action will fail because the sound file doesn't exist on disk
     response = actions_client.post("/api/actions/bark_alarm/test")
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is False
-    assert "not implemented" in data["message"].lower()
+    assert data["message"]  # should contain an error message
 
 
 def test_fire_action_not_found(actions_client: TestClient) -> None:
