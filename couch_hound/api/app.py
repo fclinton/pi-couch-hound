@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from couch_hound.config import CONFIG_PATH, load_config
+from couch_hound.pipeline import DetectionPipeline
 
 
 @asynccontextmanager
@@ -19,8 +20,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = load_config()
     app.state.config = config
     app.state.config_path = CONFIG_PATH
+
+    # Start detection pipeline
+    pipeline = DetectionPipeline(config)
+    app.state.pipeline = pipeline
+    await pipeline.start()
+
     yield
-    # Shutdown: cleanup resources
+
+    # Shutdown: stop pipeline
+    await pipeline.stop()
 
 
 def create_app() -> FastAPI:

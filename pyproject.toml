@@ -65,5 +65,7 @@ module = [
     "pygame.*",
     "cv2.*",
     "paho.*",
+    "tflite_runtime.*",
+    "numpy.*",
 ]
 ignore_missing_imports = true
