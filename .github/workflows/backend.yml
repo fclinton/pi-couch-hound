@@ -3,18 +3,8 @@ name: Backend CI
 on:
   push:
     branches: [main, master]
-    paths:
-      - "couch_hound/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "requirements.txt"
   pull_request:
     branches: [main, master]
-    paths:
-      - "couch_hound/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "requirements.txt"
 
 jobs:
   lint-and-test:
