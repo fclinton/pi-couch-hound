@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
+import re
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -11,17 +12,18 @@ router = APIRouter(tags=["snapshots"])
 
 SNAPSHOTS_DIR = Path("snapshots").resolve()
 
+# Only allow simple filenames: alphanumerics, hyphens, underscores, dots.
+# No path separators, no ".." sequences, no hidden files starting with ".".
+_SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
 
 @router.get("/snapshots/{filename}")
 async def get_snapshot(filename: str) -> FileResponse:
     """Serve a snapshot image by filename."""
-    # Sanitize: extract only the final path component, stripping any
-    # directory separators or traversal sequences before touching the fs.
-    safe_name = PurePosixPath(filename).name
-    if not safe_name or safe_name != filename:
+    if not _SAFE_FILENAME_RE.match(filename) or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    filepath = SNAPSHOTS_DIR / safe_name
+    filepath = SNAPSHOTS_DIR / filename
 
     if not filepath.is_file():
         raise HTTPException(status_code=404, detail="Snapshot not found")
