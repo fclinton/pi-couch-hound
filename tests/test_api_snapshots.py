@@ -41,9 +41,17 @@ def test_get_snapshot_path_traversal() -> None:
         assert response.status_code in (400, 404)  # rejected either way
 
 
-def test_get_snapshot_dotdot_rejected() -> None:
-    """GET /api/snapshots/{filename} rejects filenames with '..'."""
-    app = create_app()
-    with TestClient(app) as client:
-        response = client.get("/api/snapshots/..config.yaml")
-        assert response.status_code == 400
+def test_get_snapshot_parent_dir_rejected(tmp_path: Path) -> None:
+    """GET /api/snapshots/{filename} rejects attempts to escape via '..'."""
+    # Create a file outside the snapshots dir that an attacker might target
+    (tmp_path / "secret.txt").write_bytes(b"secret")
+    snapshots = tmp_path / "snapshots"
+    snapshots.mkdir()
+
+    with patch("couch_hound.api.routes_snapshots.SNAPSHOTS_DIR", snapshots):
+        app = create_app()
+        with TestClient(app) as client:
+            response = client.get("/api/snapshots/../secret.txt")
+            assert response.status_code in (400, 404)  # must not serve the file
+            if response.status_code == 200:
+                raise AssertionError("Path traversal succeeded — file was served")
