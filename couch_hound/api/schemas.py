@@ -85,3 +85,14 @@ class EventStatsResponse(BaseModel):
     detections_per_hour: dict[str, int]
     detections_per_day: dict[str, int]
     peak_hour: int | None
+
+
+class RoiResponse(BaseModel):
+    enabled: bool
+    polygon: list[list[float]]
+    min_overlap: float
+
+
+class RoiUpdateRequest(BaseModel):
+    polygon: list[list[float]]
+    min_overlap: float | None = None
