@@ -51,11 +51,13 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_actions import router as actions_router
     from couch_hound.api.routes_config import router as config_router
     from couch_hound.api.routes_system import router as system_router
+    from couch_hound.api.routes_upload import router as upload_router
     from couch_hound.api.websocket import router as ws_router
 
     app.include_router(system_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
     app.include_router(actions_router, prefix="/api")
+    app.include_router(upload_router, prefix="/api")
     app.include_router(ws_router)
 
     # Serve frontend static files if built

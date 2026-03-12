@@ -45,3 +45,35 @@ class ActionTestResponse(BaseModel):
 class ActionToggleResponse(BaseModel):
     name: str
     enabled: bool
+
+
+class SoundFileInfo(BaseModel):
+    filename: str
+    path: str
+    size: int
+
+
+class SoundListResponse(BaseModel):
+    sounds: list[SoundFileInfo]
+
+
+class SoundUploadResponse(BaseModel):
+    filename: str
+    path: str
+    size: int
+
+
+class ModelFileInfo(BaseModel):
+    filename: str
+    path: str
+    size: int
+    labels: str | None = None
+
+
+class ModelListResponse(BaseModel):
+    models: list[ModelFileInfo]
+
+
+class ModelUploadResponse(BaseModel):
+    model: str
+    labels: str
