@@ -77,3 +77,11 @@ class ModelListResponse(BaseModel):
 class ModelUploadResponse(BaseModel):
     model: str
     labels: str
+
+
+class EventStatsResponse(BaseModel):
+    total_events: int
+    avg_confidence: float
+    detections_per_hour: dict[str, int]
+    detections_per_day: dict[str, int]
+    peak_hour: int | None
