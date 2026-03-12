@@ -69,5 +69,8 @@ module = [
     "tflite_runtime.*",
     "numpy.*",
     "aiosqlite",
+    "jose.*",
+    "passlib.*",
+    "bcrypt.*",
 ]
 ignore_missing_imports = true
