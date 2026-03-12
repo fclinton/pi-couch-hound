@@ -96,3 +96,21 @@ class RoiResponse(BaseModel):
 class RoiUpdateRequest(BaseModel):
     polygon: list[list[float]]
     min_overlap: float | None = None
+
+
+class ActionResultItem(BaseModel):
+    name: str
+    success: bool
+    message: str
+
+
+class TestAllActionsResponse(BaseModel):
+    results: list[ActionResultItem]
+    total: int
+    succeeded: int
+    failed: int
+
+
+class RestartResponse(BaseModel):
+    status: str
+    message: str
