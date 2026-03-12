@@ -20,6 +20,7 @@ from couch_hound.templates import build_context
 
 if TYPE_CHECKING:
     from couch_hound.api.websocket import ConnectionManager
+    from couch_hound.database import EventDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class DetectionPipeline:
         self._cooldown = CooldownManager(config.cooldown)
         self._actions: list[BaseAction] = []
         self._connection_manager: ConnectionManager | None = None
+        self._event_db: EventDatabase | None = None
         self._last_detections: list[Detection] = []
 
     @property
@@ -125,6 +127,10 @@ class DetectionPipeline:
     def set_connection_manager(self, manager: ConnectionManager) -> None:
         """Attach a ConnectionManager for WebSocket broadcasting."""
         self._connection_manager = manager
+
+    def set_event_db(self, db: EventDatabase) -> None:
+        """Attach an EventDatabase for persisting detection events."""
+        self._event_db = db
 
     def update_config(self, config: AppConfig) -> None:
         """Hot-update config for next loop iteration."""
@@ -228,3 +234,19 @@ class DetectionPipeline:
                 "bbox": detection.bbox,
             }
             await self._connection_manager.broadcast_event(event_data)
+
+        # Persist event to database
+        if self._event_db is not None:
+            try:
+                action_names = [a.name for a in self._actions]
+                snapshot_path = context.get("snapshot_path")
+                await self._event_db.insert_event(
+                    timestamp=timestamp,
+                    confidence=detection.confidence,
+                    label=detection.label,
+                    bbox=detection.bbox,
+                    snapshot_path=str(snapshot_path) if snapshot_path else None,
+                    actions_fired=action_names,
+                )
+            except Exception:
+                logger.exception("Failed to persist detection event to database")

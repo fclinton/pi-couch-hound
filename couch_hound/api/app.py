@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, load_config
+from couch_hound.database import EventDatabase
 from couch_hound.pipeline import DetectionPipeline
 
 
@@ -26,16 +27,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ws_manager = ConnectionManager()
     app.state.ws_manager = ws_manager
 
-    # Start detection pipeline with WebSocket broadcasting
+    # Initialize event database
+    event_db = EventDatabase()
+    await event_db.init()
+    app.state.event_db = event_db
+
+    # Start detection pipeline with WebSocket broadcasting and event logging
     pipeline = DetectionPipeline(config)
     pipeline.set_connection_manager(ws_manager)
+    pipeline.set_event_db(event_db)
     app.state.pipeline = pipeline
     await pipeline.start()
 
     yield
 
-    # Shutdown: stop pipeline
+    # Shutdown: stop pipeline and close database
     await pipeline.stop()
+    await event_db.close()
 
 
 def create_app() -> FastAPI:
@@ -50,6 +58,7 @@ def create_app() -> FastAPI:
     # Register API routes
     from couch_hound.api.routes_actions import router as actions_router
     from couch_hound.api.routes_config import router as config_router
+    from couch_hound.api.routes_events import router as events_router
     from couch_hound.api.routes_system import router as system_router
     from couch_hound.api.routes_upload import router as upload_router
     from couch_hound.api.websocket import router as ws_router
@@ -58,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router, prefix="/api")
     app.include_router(actions_router, prefix="/api")
     app.include_router(upload_router, prefix="/api")
+    app.include_router(events_router, prefix="/api")
     app.include_router(ws_router)
 
     # Serve frontend static files if built
