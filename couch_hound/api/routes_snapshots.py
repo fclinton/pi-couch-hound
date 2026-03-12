@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -15,8 +16,17 @@ SNAPSHOTS_DIR = Path("snapshots").resolve()
 @router.get("/snapshots/{filename}")
 async def get_snapshot(filename: str) -> FileResponse:
     """Serve a snapshot image by filename."""
-    filepath = (SNAPSHOTS_DIR / filename).resolve()
-    if not filepath.is_relative_to(SNAPSHOTS_DIR):
+    try:
+        filepath = (SNAPSHOTS_DIR / filename).resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    try:
+        common = os.path.commonpath([SNAPSHOTS_DIR, filepath])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    if Path(common) != SNAPSHOTS_DIR:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     if not filepath.is_file():
