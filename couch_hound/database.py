@@ -198,10 +198,24 @@ class EventDatabase:
         peak_row = await cursor.fetchone()
         peak_hour: int | None = peak_row["hr"] if peak_row is not None else None
 
+        # Confidence distribution (bucketed into 0.1-wide ranges)
+        cursor = await self._db.execute(
+            "SELECT CAST(confidence * 10 AS INTEGER) AS bucket, COUNT(*) AS cnt"
+            " FROM events GROUP BY bucket ORDER BY bucket"
+        )
+        conf_dist: dict[str, int] = {}
+        for r in await cursor.fetchall():
+            b: int = r["bucket"]
+            lo = b / 10
+            hi = lo + 0.1
+            label = f"{lo:.2f}-{hi:.2f}"
+            conf_dist[label] = r["cnt"]
+
         return {
             "total_events": total_events,
             "avg_confidence": avg_confidence,
             "detections_per_hour": per_hour,
             "detections_per_day": per_day,
             "peak_hour": peak_hour,
+            "confidence_distribution": conf_dist,
         }

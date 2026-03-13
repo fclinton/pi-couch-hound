@@ -80,6 +80,7 @@ describe("EventStats page", () => {
         detections_per_hour: { "2026-03-13T10": 5, "2026-03-13T11": 8 },
         detections_per_day: { "2026-03-12": 20, "2026-03-13": 15 },
         peak_hour: 14,
+        confidence_distribution: { "0.70-0.80": 3, "0.80-0.90": 5 },
       },
       isLoading: false,
       isError: false,
@@ -100,6 +101,7 @@ describe("EventStats page", () => {
         detections_per_hour: {},
         detections_per_day: {},
         peak_hour: null,
+        confidence_distribution: {},
       },
       isLoading: false,
       isError: false,
@@ -118,6 +120,7 @@ describe("EventStats page", () => {
         detections_per_hour: { "2026-03-13T10": 3 },
         detections_per_day: { "2026-03-13": 5 },
         peak_hour: 10,
+        confidence_distribution: { "0.90-1.00": 3 },
       },
       isLoading: false,
       isError: false,
@@ -127,5 +130,6 @@ describe("EventStats page", () => {
 
     expect(screen.getByText("Detections Per Hour (Last 24h)")).toBeInTheDocument();
     expect(screen.getByText("Detections Per Day (Last 7 Days)")).toBeInTheDocument();
+    expect(screen.getByText("Confidence Distribution")).toBeInTheDocument();
   });
 });

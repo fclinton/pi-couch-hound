@@ -222,6 +222,8 @@ def test_get_stats(events_client: TestClient) -> None:
     assert data["peak_hour"] is not None
     assert isinstance(data["detections_per_hour"], dict)
     assert isinstance(data["detections_per_day"], dict)
+    assert isinstance(data["confidence_distribution"], dict)
+    assert len(data["confidence_distribution"]) > 0
 
 
 def test_get_stats_empty(empty_events_client: TestClient) -> None:
@@ -231,3 +233,4 @@ def test_get_stats_empty(empty_events_client: TestClient) -> None:
     assert data["total_events"] == 0
     assert data["avg_confidence"] == 0.0
     assert data["peak_hour"] is None
+    assert data["confidence_distribution"] == {}

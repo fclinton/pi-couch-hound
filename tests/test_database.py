@@ -203,6 +203,7 @@ async def test_stats_empty(db: EventDatabase) -> None:
     assert stats["detections_per_hour"] == {}
     assert stats["detections_per_day"] == {}
     assert stats["peak_hour"] is None
+    assert stats["confidence_distribution"] == {}
 
 
 async def test_stats_with_data(db: EventDatabase) -> None:
@@ -217,6 +218,8 @@ async def test_stats_with_data(db: EventDatabase) -> None:
     assert stats["peak_hour"] is not None
     assert len(stats["detections_per_hour"]) > 0
     assert len(stats["detections_per_day"]) > 0
+    assert len(stats["confidence_distribution"]) > 0
+    assert isinstance(stats["confidence_distribution"], dict)
 
 
 # ── database file creation ──
