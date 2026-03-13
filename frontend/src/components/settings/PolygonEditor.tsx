@@ -4,6 +4,7 @@ interface PolygonEditorProps {
   polygon: number[][];
   onChange: (polygon: number[][]) => void;
   resolution: [number, number];
+  backgroundUrl?: string | null;
 }
 
 const VERTEX_RADIUS = 0.015;
@@ -16,7 +17,7 @@ function clamp(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
-export default function PolygonEditor({ polygon, onChange, resolution }: PolygonEditorProps) {
+export default function PolygonEditor({ polygon, onChange, resolution, backgroundUrl }: PolygonEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
@@ -86,16 +87,29 @@ export default function PolygonEditor({ polygon, onChange, resolution }: Polygon
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
-        {/* Background */}
-        <rect
-          x="0"
-          y="0"
-          width="1"
-          height="1"
-          fill="#374151"
-          cursor="crosshair"
-          onPointerDown={handleBackgroundPointerDown}
-        />
+        {/* Background — live feed or fallback gray */}
+        {backgroundUrl ? (
+          <image
+            href={backgroundUrl}
+            x="0"
+            y="0"
+            width="1"
+            height="1"
+            preserveAspectRatio="none"
+            cursor="crosshair"
+            onPointerDown={handleBackgroundPointerDown}
+          />
+        ) : (
+          <rect
+            x="0"
+            y="0"
+            width="1"
+            height="1"
+            fill="#374151"
+            cursor="crosshair"
+            onPointerDown={handleBackgroundPointerDown}
+          />
+        )}
 
         {/* Polygon fill + stroke */}
         {polygon.length >= 3 && (
