@@ -3,6 +3,7 @@ import Layout from "./components/layout/Layout";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import EventStats from "./pages/EventStats";
+import EventDetail from "./pages/EventDetail";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import { useAuthStatus } from "./api/auth";
@@ -41,6 +42,7 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/events/stats" element={<EventStats />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

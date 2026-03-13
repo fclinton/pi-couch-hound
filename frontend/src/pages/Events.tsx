@@ -1,9 +1,11 @@
 import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useEvents, useDeleteEvent, useBulkDeleteEvents } from "@/api/events";
 
 const PAGE_SIZE = 20;
 
 export default function Events() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
@@ -138,7 +140,11 @@ export default function Events() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {data.events.map((event) => (
-                <tr key={event.id} className="hover:bg-gray-50">
+                <tr
+                  key={event.id}
+                  onClick={() => navigate(`/events/${event.id}`)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
                   <td className="px-4 py-3">
                     {event.snapshot_path ? (
                       <img
@@ -168,7 +174,10 @@ export default function Events() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => handleDelete(event.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(event.id);
+                      }}
                       disabled={deleteMutation.isPending}
                       className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
                     >
