@@ -22,6 +22,9 @@
     "clsx": "^2.1.0",
     "tailwind-merge": "^2.2.0"
   },
+  "overrides": {
+    "minimatch": ">=9.0.7"
+  },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.0",
