@@ -1,8 +1,25 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
+
+beforeEach(() => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = typeof input === "string" ? input : (input as Request).url;
+    if (url.endsWith("/api/auth/status")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ auth_enabled: false, authenticated: false }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+  });
+});
 
 function renderApp(route = "/") {
   const queryClient = new QueryClient({
@@ -18,24 +35,26 @@ function renderApp(route = "/") {
 }
 
 describe("App", () => {
-  it("renders the dashboard page heading", () => {
+  it("renders the dashboard page heading", async () => {
     renderApp("/");
     expect(
-      screen.getByRole("heading", { level: 1, name: "Dashboard" }),
+      await screen.findByRole("heading", { level: 1, name: "Dashboard" }),
     ).toBeInTheDocument();
   });
 
-  it("renders the events page heading", () => {
+  it("renders the events page heading", async () => {
     renderApp("/events");
     expect(
-      screen.getByRole("heading", { level: 1, name: "Events" }),
+      await screen.findByRole("heading", { level: 1, name: "Events" }),
     ).toBeInTheDocument();
   });
 
-  it("renders the settings page heading", () => {
+  it("renders the settings page heading", async () => {
     renderApp("/settings");
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Settings" }),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Settings" }),
+      ).toBeInTheDocument();
+    });
   });
 });
