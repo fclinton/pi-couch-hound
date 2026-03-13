@@ -85,6 +85,7 @@ class EventStatsResponse(BaseModel):
     detections_per_hour: dict[str, int]
     detections_per_day: dict[str, int]
     peak_hour: int | None
+    confidence_distribution: dict[str, int]
 
 
 class RoiResponse(BaseModel):

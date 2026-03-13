@@ -1,4 +1,5 @@
 import { useEventStats } from "@/api/events";
+import ConfidenceChart from "@/components/stats/ConfidenceChart";
 import DetectionChart from "@/components/stats/DetectionChart";
 
 function formatHourLabel(key: string): string {
@@ -80,6 +81,7 @@ export default function EventStats() {
         title="Detections Per Day (Last 7 Days)"
         formatLabel={formatDayLabel}
       />
+      <ConfidenceChart data={data.confidence_distribution} />
     </div>
   );
 }
