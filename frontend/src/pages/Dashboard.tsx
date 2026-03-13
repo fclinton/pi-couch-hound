@@ -1,6 +1,7 @@
 import { useSystemStatus } from "@/api/system";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import VideoFeed from "@/components/live/VideoFeed";
+import EventsTicker from "@/components/dashboard/EventsTicker";
 
 interface WsStatus {
   cpu_percent: number;
@@ -65,6 +66,13 @@ export default function Dashboard() {
           />
         </div>
       )}
+
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h2 className="mb-4 text-lg font-semibold text-gray-800">
+          Recent Detections
+        </h2>
+        <EventsTicker />
+      </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-6">
         <h2 className="mb-4 text-lg font-semibold text-gray-800">
