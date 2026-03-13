@@ -149,4 +149,4 @@ cd frontend && npm run dev
 
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](LICENSE) for details.
