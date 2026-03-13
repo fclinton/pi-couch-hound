@@ -11,6 +11,11 @@ class StatusResponse(BaseModel):
     status: str
     uptime_seconds: float
     version: str
+    detection_count: int
+    last_detection_time: str | None
+    cpu_percent: float
+    memory_percent: float
+    temperature: float | None
 
 
 class EventResponse(BaseModel):

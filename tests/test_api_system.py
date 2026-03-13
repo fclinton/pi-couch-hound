@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from couch_hound.api.app import create_app
 from couch_hound.config import ActionConfig, AppConfig
+from couch_hound.pipeline import PipelineStats
 
 
 def test_health_check(client: TestClient):
@@ -21,13 +22,54 @@ def test_health_check(client: TestClient):
 
 
 def test_status(client: TestClient):
-    """Status endpoint should return running status."""
-    response = client.get("/api/status")
+    """Status endpoint should return running status with detection stats and metrics."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.stats = PipelineStats(
+        detection_count=5, last_detection_time="2026-03-13T10:00:00"
+    )
+    client.app.state.pipeline = mock_pipeline  # type: ignore[union-attr]
+
+    with patch(
+        "couch_hound.api.routes_system.get_system_metrics",
+        return_value={
+            "cpu_percent": 42.1,
+            "memory_percent": 61.3,
+            "temperature": 58.2,
+        },
+    ):
+        response = client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "running"
     assert "uptime_seconds" in data
     assert data["version"] == "0.1.0"
+    assert data["detection_count"] == 5
+    assert data["last_detection_time"] == "2026-03-13T10:00:00"
+    assert data["cpu_percent"] == 42.1
+    assert data["memory_percent"] == 61.3
+    assert data["temperature"] == 58.2
+
+
+def test_status_no_detections(client: TestClient):
+    """Status endpoint should handle zero detections and null temperature."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.stats = PipelineStats()
+    client.app.state.pipeline = mock_pipeline  # type: ignore[union-attr]
+
+    with patch(
+        "couch_hound.api.routes_system.get_system_metrics",
+        return_value={
+            "cpu_percent": 0.0,
+            "memory_percent": 0.0,
+            "temperature": None,
+        },
+    ):
+        response = client.get("/api/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["detection_count"] == 0
+    assert data["last_detection_time"] is None
+    assert data["temperature"] is None
 
 
 # ── POST /api/test-actions ──

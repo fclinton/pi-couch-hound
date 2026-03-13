@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -12,8 +12,10 @@ from couch_hound.actions import create_action
 from couch_hound.api.schemas import (
     ActionResultItem,
     RestartResponse,
+    StatusResponse,
     TestAllActionsResponse,
 )
+from couch_hound.api.websocket import get_system_metrics
 from couch_hound.config import AppConfig
 from couch_hound.pipeline import DetectionPipeline
 
@@ -25,13 +27,21 @@ _start_time = time.time()
 
 
 @router.get("/status")
-async def get_status(request: Request) -> dict[str, Any]:
-    """Return system status."""
-    return {
-        "status": "running",
-        "uptime_seconds": round(time.time() - _start_time, 1),
-        "version": "0.1.0",
-    }
+async def get_status(request: Request) -> StatusResponse:
+    """Return system status including detection stats and hardware metrics."""
+    pipeline: DetectionPipeline = request.app.state.pipeline
+    metrics = await asyncio.to_thread(get_system_metrics)
+
+    return StatusResponse(
+        status="running",
+        uptime_seconds=round(time.time() - _start_time, 1),
+        version="0.1.0",
+        detection_count=pipeline.stats.detection_count,
+        last_detection_time=pipeline.stats.last_detection_time,
+        cpu_percent=metrics["cpu_percent"],
+        memory_percent=metrics["memory_percent"],
+        temperature=metrics["temperature"],
+    )
 
 
 @router.get("/health")
