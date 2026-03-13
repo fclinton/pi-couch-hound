@@ -7,9 +7,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jwt.exceptions import PyJWTError
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def create_access_token(username: str, expires_delta: timedelta | None = None) -
 
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT access token."""
-    return jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])  # type: ignore[no-any-return]
+    return jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
 
 async def require_auth(
@@ -75,7 +76,7 @@ async def require_auth(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return username
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
