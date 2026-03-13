@@ -114,3 +114,21 @@ export interface EventStatsResponse {
   detections_per_day: Record<string, number>;
   peak_hour: number | null;
 }
+
+// --- Auth types ---
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export interface AuthStatusResponse {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  username: string | null;
+}
