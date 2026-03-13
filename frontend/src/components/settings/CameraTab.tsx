@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useUpdateConfigSection } from "@/api/config";
 import type { AppConfig } from "@/api/types";
 import { TextInput, NumberInput, SaveBar } from "./FormFields";
+import VideoFeed from "@/components/live/VideoFeed";
 
 interface Props {
   config: AppConfig;
@@ -35,6 +36,9 @@ export default function CameraTab({ config }: Props) {
 
   return (
     <div className="space-y-4">
+      <div className="overflow-hidden rounded border border-gray-200">
+        <VideoFeed />
+      </div>
       <TextInput
         label="Source"
         value={source}
