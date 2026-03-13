@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUpdateConfigSection } from "@/api/config";
 import type { AppConfig } from "@/api/types";
+import { useStream } from "@/hooks/useStream";
 import { SliderInput, Toggle, SaveBar } from "./FormFields";
 import PolygonEditor from "./PolygonEditor";
 
@@ -10,6 +11,7 @@ interface Props {
 
 export default function RoiTab({ config }: Props) {
   const roi = config.detection.roi;
+  const { frameUrl } = useStream();
   const [enabled, setEnabled] = useState(roi.enabled);
   const [minOverlap, setMinOverlap] = useState(roi.min_overlap);
   const [polygon, setPolygon] = useState<number[][]>(roi.polygon);
@@ -54,6 +56,7 @@ export default function RoiTab({ config }: Props) {
           polygon={polygon}
           onChange={setPolygon}
           resolution={config.camera.resolution}
+          backgroundUrl={frameUrl}
         />
         <div className="flex items-center gap-2">
           <button
