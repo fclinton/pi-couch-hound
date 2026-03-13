@@ -143,7 +143,7 @@ class ConnectionManager:
             self._event_clients.discard(ws)
 
 
-def _get_system_metrics() -> dict[str, Any]:
+def get_system_metrics() -> dict[str, Any]:
     """Gather system metrics from /proc and /sys (Linux only, graceful fallback)."""
     metrics: dict[str, Any] = {
         "cpu_percent": 0.0,
@@ -228,7 +228,7 @@ async def ws_status(websocket: WebSocket) -> None:
     try:
         while True:
             pipeline = websocket.app.state.pipeline
-            metrics = await asyncio.to_thread(_get_system_metrics)
+            metrics = await asyncio.to_thread(get_system_metrics)
 
             status_msg: dict[str, Any] = {
                 **metrics,

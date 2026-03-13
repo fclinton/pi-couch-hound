@@ -179,7 +179,7 @@ class TestWsEvents:
 class TestWsStatus:
     def test_status_receives_json(self, ws_client: TestClient):
         with patch(
-            "couch_hound.api.websocket._get_system_metrics",
+            "couch_hound.api.websocket.get_system_metrics",
             return_value={
                 "cpu_percent": 25.0,
                 "memory_percent": 50.0,
@@ -195,7 +195,7 @@ class TestWsStatus:
 
     def test_status_has_pipeline_info(self, ws_client: TestClient):
         with patch(
-            "couch_hound.api.websocket._get_system_metrics",
+            "couch_hound.api.websocket.get_system_metrics",
             return_value={
                 "cpu_percent": 0.0,
                 "memory_percent": 0.0,
