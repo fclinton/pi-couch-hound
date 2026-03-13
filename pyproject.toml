@@ -7,7 +7,7 @@ name = "pi-couch-hound"
 version = "0.1.0"
 description = "Raspberry Pi-powered dog detector for catching couch potato pups"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0" }
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
