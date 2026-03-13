@@ -3,6 +3,7 @@ import { useUpdateConfigSection } from "@/api/config";
 import type { ActionConfig, ActionType, AppConfig } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { TextInput, NumberInput, SelectInput, Toggle, SaveBar } from "./FormFields";
+import { TemplateTextarea } from "./TemplateTextarea";
 
 interface Props {
   config: AppConfig;
@@ -119,15 +120,12 @@ function ActionFields({
               className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </label>
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Body</span>
-            <textarea
-              value={action.body ?? ""}
-              onChange={(e) => set("body", e.target.value || null)}
-              rows={2}
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-          </label>
+          <TemplateTextarea
+            label="Body"
+            value={action.body ?? ""}
+            onChange={(v) => set("body", v || null)}
+            rows={2}
+          />
         </>
       )}
 
@@ -153,10 +151,11 @@ function ActionFields({
               value={action.topic ?? ""}
               onChange={(v) => set("topic", v || null)}
             />
-            <TextInput
+            <TemplateTextarea
               label="Payload"
               value={action.payload ?? ""}
               onChange={(v) => set("payload", v || null)}
+              rows={1}
             />
           </div>
         </>
@@ -237,6 +236,19 @@ export default function ActionsTab({ config }: Props) {
     setExpanded(actions.length);
   };
 
+  const moveAction = (from: number, to: number) => {
+    if (to < 0 || to >= actions.length) return;
+    const next = [...actions];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setActions(next);
+    if (expanded === from) setExpanded(to);
+    else if (expanded !== null) {
+      if (from < expanded && to >= expanded) setExpanded(expanded - 1);
+      else if (from > expanded && to <= expanded) setExpanded(expanded + 1);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -256,6 +268,24 @@ export default function ActionsTab({ config }: Props) {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <div className="flex flex-col">
+                <button
+                  onClick={() => moveAction(i, i - 1)}
+                  disabled={i === 0}
+                  className="px-1 text-xs leading-none text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                  aria-label={`Move ${action.name || "action"} up`}
+                >
+                  &#9650;
+                </button>
+                <button
+                  onClick={() => moveAction(i, i + 1)}
+                  disabled={i === actions.length - 1}
+                  className="px-1 text-xs leading-none text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                  aria-label={`Move ${action.name || "action"} down`}
+                >
+                  &#9660;
+                </button>
+              </div>
               <button
                 onClick={() => setExpanded(expanded === i ? null : i)}
                 className="text-sm font-medium text-gray-700 hover:text-brand-600"
