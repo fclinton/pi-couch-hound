@@ -6,6 +6,8 @@ const TEMPLATE_VARIABLES = [
   { name: "label", description: "Detected object label" },
   { name: "bbox", description: "Bounding box coordinates" },
   { name: "snapshot_path", description: "Path to snapshot image" },
+  { name: "escalation_level", description: "Current escalation level (1-based)" },
+  { name: "escalation_elapsed", description: "Seconds since initial detection" },
 ] as const;
 
 interface TemplateTextareaProps {

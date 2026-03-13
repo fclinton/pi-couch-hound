@@ -79,6 +79,17 @@ export interface ActionConfig {
   duration?: number | null;
 }
 
+export interface EscalationLevelConfig {
+  delay: number;
+  actions: string[];
+}
+
+export interface EscalationConfig {
+  enabled: boolean;
+  reset_cooldown: number;
+  levels: EscalationLevelConfig[];
+}
+
 export interface AuthConfig {
   enabled: boolean;
   username: string;
@@ -103,6 +114,7 @@ export interface AppConfig {
   detection: DetectionConfig;
   cooldown: CooldownConfig;
   actions: ActionConfig[];
+  escalation: EscalationConfig;
   web: WebConfig;
   logging: LoggingConfig;
 }

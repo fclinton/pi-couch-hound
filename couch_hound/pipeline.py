@@ -15,6 +15,7 @@ from couch_hound.camera import Camera
 from couch_hound.config import AppConfig
 from couch_hound.cooldown import CooldownManager
 from couch_hound.detector import Detection, Detector
+from couch_hound.escalation import EscalationManager
 from couch_hound.roi import bbox_in_roi
 from couch_hound.templates import build_context
 
@@ -57,6 +58,8 @@ class DetectionPipeline:
         self._detector = Detector(config.detection)
         self._cooldown = CooldownManager(config.cooldown)
         self._actions: list[BaseAction] = []
+        self._actions_by_name: dict[str, BaseAction] = {}
+        self._escalation = EscalationManager(config.escalation)
         self._connection_manager: ConnectionManager | None = None
         self._event_db: EventDatabase | None = None
         self._last_detections: list[Detection] = []
@@ -81,6 +84,7 @@ class DetectionPipeline:
                 actions.append(create_action(action_cfg))
             except NotImplementedError:
                 logger.warning("Skipping unregistered action type: %s", action_cfg.type)
+        self._actions_by_name = {a.name: a for a in actions}
         return actions
 
     async def start(self) -> None:
@@ -92,6 +96,7 @@ class DetectionPipeline:
             self._camera = Camera(self._config.camera)
             self._detector = Detector(self._config.detection)
             self._cooldown = CooldownManager(self._config.cooldown)
+            self._escalation = EscalationManager(self._config.escalation)
             self._actions = self._build_actions()
 
             await asyncio.to_thread(self._camera.open)
@@ -136,6 +141,7 @@ class DetectionPipeline:
         """Hot-update config for next loop iteration."""
         self._config = config
         self._cooldown.update_config(config.cooldown)
+        self._escalation.update_config(config.escalation)
 
     async def _run(self) -> None:
         """Launch detection and stream loops concurrently."""
@@ -179,13 +185,89 @@ class DetectionPipeline:
             # Update cached detections for the stream overlay
             self._last_detections = detections
 
-            if detections and self._cooldown.can_trigger():
-                best = max(detections, key=lambda d: d.confidence)
-                self._cooldown.record_trigger()
-                await self._dispatch(best)
-                self._stats.detection_count += 1
+            if self._config.escalation.enabled:
+                await self._escalation_dispatch(detections)
+            else:
+                if detections and self._cooldown.can_trigger():
+                    best = max(detections, key=lambda d: d.confidence)
+                    self._cooldown.record_trigger()
+                    await self._dispatch(best)
+                    self._stats.detection_count += 1
 
             await asyncio.sleep(self._config.camera.capture_interval)
+
+    async def _escalation_dispatch(self, detections: list[Detection]) -> None:
+        """Drive the escalation manager and dispatch level-specific actions."""
+        detected = bool(detections)
+        levels_to_fire = self._escalation.update_detection(detected)
+
+        if not levels_to_fire or not detections:
+            return
+
+        best = max(detections, key=lambda d: d.confidence)
+        timestamp = datetime.now(tz=UTC).isoformat()
+
+        for level_idx in levels_to_fire:
+            if level_idx >= len(self._config.escalation.levels):
+                continue
+            level_cfg = self._config.escalation.levels[level_idx]
+            esc_vars = self._escalation.get_context_vars(level_idx)
+
+            context = build_context(
+                label=best.label,
+                confidence=best.confidence,
+                bbox=best.bbox,
+                timestamp=timestamp,
+                escalation_level=esc_vars["escalation_level"],
+                escalation_elapsed=esc_vars["escalation_elapsed"],
+            )
+            self._stats.last_detection_time = timestamp
+
+            for action_name in level_cfg.actions:
+                action = self._actions_by_name.get(action_name)
+                if action is None:
+                    logger.warning(
+                        "Escalation level %d references unknown action: %s",
+                        level_idx + 1,
+                        action_name,
+                    )
+                    continue
+                try:
+                    await action.execute(context)
+                except Exception:
+                    logger.exception(
+                        "Action '%s' failed (escalation level %d)", action_name, level_idx + 1
+                    )
+
+        self._stats.detection_count += 1
+
+        # Broadcast event to WebSocket clients
+        if self._connection_manager is not None:
+            event_data = {
+                "timestamp": timestamp,
+                "label": best.label,
+                "confidence": best.confidence,
+                "bbox": best.bbox,
+            }
+            await self._connection_manager.broadcast_event(event_data)
+
+        # Persist event to database
+        if self._event_db is not None:
+            try:
+                fired_actions: list[str] = []
+                for level_idx in levels_to_fire:
+                    if level_idx < len(self._config.escalation.levels):
+                        fired_actions.extend(self._config.escalation.levels[level_idx].actions)
+                await self._event_db.insert_event(
+                    timestamp=timestamp,
+                    confidence=best.confidence,
+                    label=best.label,
+                    bbox=best.bbox,
+                    snapshot_path=None,
+                    actions_fired=fired_actions,
+                )
+            except Exception:
+                logger.exception("Failed to persist detection event to database")
 
     async def _stream_loop(self) -> None:
         """Fast frame-grab loop for live streaming with cached detection overlays."""

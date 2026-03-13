@@ -69,6 +69,17 @@ class ActionConfig(BaseModel):
     duration: float | None = None
 
 
+class EscalationLevelConfig(BaseModel):
+    delay: int = Field(default=0, ge=0)
+    actions: list[str] = Field(default_factory=list)
+
+
+class EscalationConfig(BaseModel):
+    enabled: bool = False
+    reset_cooldown: int = Field(default=0, ge=0)
+    levels: list[EscalationLevelConfig] = Field(default_factory=list, max_length=5)
+
+
 class AuthConfig(BaseModel):
     enabled: bool = False
     username: str = "admin"
@@ -93,6 +104,7 @@ class AppConfig(BaseModel):
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     cooldown: CooldownConfig = Field(default_factory=CooldownConfig)
     actions: list[ActionConfig] = Field(default_factory=list)
+    escalation: EscalationConfig = Field(default_factory=EscalationConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
