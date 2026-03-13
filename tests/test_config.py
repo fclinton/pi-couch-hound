@@ -5,7 +5,13 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from couch_hound.config import AppConfig, load_config, save_config
+from couch_hound.config import (
+    AppConfig,
+    EscalationConfig,
+    EscalationLevelConfig,
+    load_config,
+    save_config,
+)
 
 
 def test_default_config():
@@ -43,3 +49,50 @@ def test_config_validation():
 
     with pytest.raises(Exception):
         AppConfig(detection={"confidence_threshold": 2.0})  # type: ignore[arg-type]
+
+
+def test_default_escalation_config():
+    """Default escalation config should be disabled with empty levels."""
+    config = AppConfig()
+    assert config.escalation.enabled is False
+    assert config.escalation.reset_cooldown == 0
+    assert config.escalation.levels == []
+
+
+def test_escalation_config_roundtrip():
+    """Escalation config should round-trip through YAML."""
+    config = AppConfig(
+        escalation=EscalationConfig(
+            enabled=True,
+            reset_cooldown=10,
+            levels=[
+                EscalationLevelConfig(delay=0, actions=["bark"]),
+                EscalationLevelConfig(delay=5, actions=["siren", "mqtt"]),
+            ],
+        )
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+        path = Path(f.name)
+
+    save_config(config, path)
+    loaded = load_config(path)
+    assert loaded.escalation.enabled is True
+    assert loaded.escalation.reset_cooldown == 10
+    assert len(loaded.escalation.levels) == 2
+    assert loaded.escalation.levels[0].delay == 0
+    assert loaded.escalation.levels[0].actions == ["bark"]
+    assert loaded.escalation.levels[1].delay == 5
+    assert loaded.escalation.levels[1].actions == ["siren", "mqtt"]
+    path.unlink()
+
+
+def test_escalation_max_levels():
+    """Escalation levels should be capped at 5."""
+    import pytest
+
+    with pytest.raises(Exception):
+        EscalationConfig(
+            enabled=True,
+            levels=[EscalationLevelConfig(delay=i) for i in range(6)],
+        )

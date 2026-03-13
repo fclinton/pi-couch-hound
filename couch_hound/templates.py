@@ -22,12 +22,19 @@ def build_context(
     bbox: list[float],
     timestamp: str,
     snapshot_path: str = "",
+    escalation_level: str = "",
+    escalation_elapsed: str = "",
 ) -> dict[str, str]:
     """Build a template context dict from detection results."""
-    return {
+    ctx: dict[str, str] = {
         "timestamp": timestamp,
         "confidence": f"{confidence:.4f}",
         "label": label,
         "bbox": str(bbox),
         "snapshot_path": snapshot_path,
     }
+    if escalation_level:
+        ctx["escalation_level"] = escalation_level
+    if escalation_elapsed:
+        ctx["escalation_elapsed"] = escalation_elapsed
+    return ctx

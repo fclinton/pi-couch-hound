@@ -5,10 +5,11 @@ import CameraTab from "@/components/settings/CameraTab";
 import DetectionTab from "@/components/settings/DetectionTab";
 import RoiTab from "@/components/settings/RoiTab";
 import ActionsTab from "@/components/settings/ActionsTab";
+import EscalationTab from "@/components/settings/EscalationTab";
 import CooldownTab from "@/components/settings/CooldownTab";
 import SystemTab from "@/components/settings/SystemTab";
 
-const tabs = ["Camera", "Detection", "ROI", "Actions", "Cooldown", "System"] as const;
+const tabs = ["Camera", "Detection", "ROI", "Actions", "Escalation", "Cooldown", "System"] as const;
 type Tab = (typeof tabs)[number];
 
 export default function Settings() {
@@ -53,6 +54,7 @@ export default function Settings() {
             {activeTab === "Detection" && <DetectionTab config={config} />}
             {activeTab === "ROI" && <RoiTab config={config} />}
             {activeTab === "Actions" && <ActionsTab config={config} />}
+            {activeTab === "Escalation" && <EscalationTab config={config} />}
             {activeTab === "Cooldown" && <CooldownTab config={config} />}
             {activeTab === "System" && <SystemTab config={config} />}
           </>
