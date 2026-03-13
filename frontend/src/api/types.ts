@@ -106,3 +106,11 @@ export interface AppConfig {
   web: WebConfig;
   logging: LoggingConfig;
 }
+
+export interface EventStatsResponse {
+  total_events: number;
+  avg_confidence: number;
+  detections_per_hour: Record<string, number>;
+  detections_per_day: Record<string, number>;
+  peak_hour: number | null;
+}

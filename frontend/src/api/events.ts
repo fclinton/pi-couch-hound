@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { DetectionEvent, EventListResponse } from "./types";
+import type { DetectionEvent, EventListResponse, EventStatsResponse } from "./types";
 
 interface EventsQueryParams {
   limit?: number;
@@ -20,6 +20,13 @@ export function useEvents(params: EventsQueryParams = {}) {
   return useQuery({
     queryKey: ["events", { limit, offset, since, until }],
     queryFn: () => apiFetch<EventListResponse>(`/events?${searchParams.toString()}`),
+  });
+}
+
+export function useEventStats() {
+  return useQuery({
+    queryKey: ["events", "stats"],
+    queryFn: () => apiFetch<EventStatsResponse>("/events/stats"),
   });
 }
 
