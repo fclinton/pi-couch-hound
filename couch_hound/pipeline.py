@@ -70,6 +70,7 @@ class DetectionPipeline:
         self._actions: list[BaseAction] = []
         self._actions_by_name: dict[str, BaseAction] = {}
         self._escalation = EscalationManager(config.escalation)
+        self._monitoring_enabled: bool = config.monitoring.enabled
         self._connection_manager: ConnectionManager | None = None
         self._event_db: EventDatabase | None = None
         self._last_detections: list[Detection] = []
@@ -89,6 +90,16 @@ class DetectionPipeline:
     def fatal_error(self) -> asyncio.Event:
         """Set when the pipeline exhausts retries and cannot recover."""
         return self._fatal_error
+
+    @property
+    def monitoring_enabled(self) -> bool:
+        """Whether monitoring (action dispatch) is active."""
+        return self._monitoring_enabled
+
+    def set_monitoring_enabled(self, enabled: bool) -> None:
+        """Toggle monitoring on or off at runtime."""
+        self._monitoring_enabled = enabled
+        logger.info("Monitoring %s", "enabled" if enabled else "disabled")
 
     def _build_actions(self) -> list[BaseAction]:
         """Instantiate action handlers from config."""
@@ -156,6 +167,7 @@ class DetectionPipeline:
     def update_config(self, config: AppConfig) -> None:
         """Hot-update config for next loop iteration."""
         self._config = config
+        self._monitoring_enabled = config.monitoring.enabled
         self._cooldown.update_config(config.cooldown)
         self._escalation.update_config(config.escalation)
 
@@ -313,6 +325,10 @@ class DetectionPipeline:
                         self._config.detection.roi.min_overlap,
                     )
                 ]
+
+            if not self._monitoring_enabled:
+                await asyncio.sleep(self._config.camera.capture_interval)
+                continue
 
             if self._config.escalation.enabled:
                 await self._escalation_dispatch(target_detections, frame)

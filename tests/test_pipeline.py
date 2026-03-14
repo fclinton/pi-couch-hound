@@ -11,6 +11,7 @@ from couch_hound.config import (
     AppConfig,
     CooldownConfig,
     DetectionConfig,
+    MonitoringConfig,
     RoiConfig,
     TwoStageConfig,
 )
@@ -165,6 +166,43 @@ class TestPipelineDetection:
             await pipeline._task
 
         mock_action.execute.assert_not_called()
+
+    async def test_monitoring_disabled_skips_dispatch(self) -> None:
+        """When monitoring is disabled, detection runs but actions don't fire."""
+        config = AppConfig(
+            cooldown=CooldownConfig(seconds=0),
+            monitoring=MonitoringConfig(enabled=False),
+        )
+        pipeline = DetectionPipeline(config)
+        mock_cam = _make_mock_camera(stop_after=2, pipeline=pipeline)
+        mock_det = _make_mock_detector()
+
+        mock_action = MagicMock()
+        mock_action.execute = AsyncMock()
+        mock_action.name = "test_action"
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_build_actions", return_value=[mock_action]),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        # Detection ran but actions should not have fired
+        mock_det.detect.assert_called()
+        mock_action.execute.assert_not_called()
+        assert pipeline.stats.detection_count == 0
+
+    async def test_monitoring_toggle_at_runtime(self) -> None:
+        """set_monitoring_enabled toggles the flag at runtime."""
+        pipeline = DetectionPipeline(AppConfig())
+        assert pipeline.monitoring_enabled is True
+        pipeline.set_monitoring_enabled(False)
+        assert pipeline.monitoring_enabled is False
+        pipeline.set_monitoring_enabled(True)
+        assert pipeline.monitoring_enabled is True
 
     async def test_handles_camera_failure(self) -> None:
         pipeline = DetectionPipeline(AppConfig())
