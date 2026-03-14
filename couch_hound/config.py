@@ -137,6 +137,15 @@ class UpdateConfig(BaseModel):
     maintenance_window_end: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
 
 
+class AutoDisableConfig(BaseModel):
+    person_detection: bool = False
+
+
+class MonitoringConfig(BaseModel):
+    enabled: bool = True
+    auto_disable: AutoDisableConfig = Field(default_factory=AutoDisableConfig)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -145,6 +154,7 @@ class AppConfig(BaseModel):
     cooldown: CooldownConfig = Field(default_factory=CooldownConfig)
     actions: list[ActionConfig] = Field(default_factory=list)
     escalation: EscalationConfig = Field(default_factory=EscalationConfig)
+    monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)

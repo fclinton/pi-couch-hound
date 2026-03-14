@@ -2,6 +2,7 @@ export interface SystemStatus {
   status: string;
   uptime_seconds: number;
   version: string;
+  monitoring_enabled: boolean;
 }
 
 export interface DetectionEvent {
@@ -137,12 +138,22 @@ export interface UpdateStatus {
   commit_messages: string[];
 }
 
+export interface AutoDisableConfig {
+  person_detection: boolean;
+}
+
+export interface MonitoringConfig {
+  enabled: boolean;
+  auto_disable: AutoDisableConfig;
+}
+
 export interface AppConfig {
   camera: CameraConfig;
   detection: DetectionConfig;
   cooldown: CooldownConfig;
   actions: ActionConfig[];
   escalation: EscalationConfig;
+  monitoring: MonitoringConfig;
   web: WebConfig;
   logging: LoggingConfig;
   update: UpdateConfig;
