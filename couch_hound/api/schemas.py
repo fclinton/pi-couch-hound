@@ -148,3 +148,18 @@ class AuthStatusResponse(BaseModel):
     auth_enabled: bool
     authenticated: bool
     username: str | None = None
+
+
+# ── Update ──
+
+
+class UpdateStatusResponse(BaseModel):
+    state: str
+    current_commit: str
+    remote_commit: str | None
+    current_version: str
+    available_version: str | None
+    last_check_time: str | None
+    last_error: str | None
+    commits_behind: int
+    commit_messages: list[str]
