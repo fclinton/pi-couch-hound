@@ -13,9 +13,14 @@ class StatusResponse(BaseModel):
     version: str
     detection_count: int
     last_detection_time: str | None
+    monitoring_enabled: bool
     cpu_percent: float
     memory_percent: float
     temperature: float | None
+
+
+class MonitoringToggleResponse(BaseModel):
+    enabled: bool
 
 
 class EventResponse(BaseModel):
