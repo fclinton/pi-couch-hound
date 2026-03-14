@@ -27,6 +27,7 @@ def test_status(client: TestClient):
     mock_pipeline.stats = PipelineStats(
         detection_count=5, last_detection_time="2026-03-13T10:00:00"
     )
+    mock_pipeline.monitoring_enabled = True
     client.app.state.pipeline = mock_pipeline  # type: ignore[union-attr]
 
     with patch(
@@ -45,6 +46,7 @@ def test_status(client: TestClient):
     assert data["version"] == "0.1.0"
     assert data["detection_count"] == 5
     assert data["last_detection_time"] == "2026-03-13T10:00:00"
+    assert data["monitoring_enabled"] is True
     assert data["cpu_percent"] == 42.1
     assert data["memory_percent"] == 61.3
     assert data["temperature"] == 58.2
@@ -54,6 +56,7 @@ def test_status_no_detections(client: TestClient):
     """Status endpoint should handle zero detections and null temperature."""
     mock_pipeline = MagicMock()
     mock_pipeline.stats = PipelineStats()
+    mock_pipeline.monitoring_enabled = True
     client.app.state.pipeline = mock_pipeline  # type: ignore[union-attr]
 
     with patch(
@@ -162,3 +165,41 @@ def test_restart_pipeline(client: TestClient) -> None:
     assert data["status"] == "ok"
     assert data["message"] == "Pipeline restarted successfully"
     mock_pipeline.restart.assert_awaited_once()
+
+
+# ── POST /api/monitoring/toggle ──
+
+
+def test_toggle_monitoring(tmp_path: Path) -> None:
+    """POST /api/monitoring/toggle should toggle and return new state."""
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.config_path = tmp_path / "config.yaml"
+        app.state.config = AppConfig()
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.monitoring_enabled = True
+        app.state.pipeline = mock_pipeline
+
+        response = client.post("/api/monitoring/toggle")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is False
+        mock_pipeline.set_monitoring_enabled.assert_called_once_with(False)
+
+
+def test_toggle_monitoring_persists(tmp_path: Path) -> None:
+    """POST /api/monitoring/toggle should persist state to config file."""
+    app = create_app()
+    config_path = tmp_path / "config.yaml"
+    with TestClient(app) as client:
+        app.state.config_path = config_path
+        app.state.config = AppConfig()
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.monitoring_enabled = True
+        app.state.pipeline = mock_pipeline
+
+        client.post("/api/monitoring/toggle")
+        assert config_path.exists()
+        assert app.state.config.monitoring.enabled is False

@@ -11,12 +11,13 @@ from fastapi import APIRouter, Request
 from couch_hound.actions import create_action
 from couch_hound.api.schemas import (
     ActionResultItem,
+    MonitoringToggleResponse,
     RestartResponse,
     StatusResponse,
     TestAllActionsResponse,
 )
 from couch_hound.api.websocket import get_system_metrics
-from couch_hound.config import AppConfig
+from couch_hound.config import AppConfig, save_config
 from couch_hound.pipeline import DetectionPipeline
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def get_status(request: Request) -> StatusResponse:
         version="0.1.0",
         detection_count=pipeline.stats.detection_count,
         last_detection_time=pipeline.stats.last_detection_time,
+        monitoring_enabled=pipeline.monitoring_enabled,
         cpu_percent=metrics["cpu_percent"],
         memory_percent=metrics["memory_percent"],
         temperature=metrics["temperature"],
@@ -84,3 +86,20 @@ async def restart_pipeline(request: Request) -> RestartResponse:
     pipeline: DetectionPipeline = request.app.state.pipeline
     await pipeline.restart()
     return RestartResponse(status="ok", message="Pipeline restarted successfully")
+
+
+@router.post("/monitoring/toggle")
+async def toggle_monitoring(request: Request) -> MonitoringToggleResponse:
+    """Toggle monitoring on or off. When off, detection continues but actions are suppressed."""
+    pipeline: DetectionPipeline = request.app.state.pipeline
+    new_state = not pipeline.monitoring_enabled
+    pipeline.set_monitoring_enabled(new_state)
+
+    config: AppConfig = request.app.state.config
+    updated = config.model_copy(
+        update={"monitoring": config.monitoring.model_copy(update={"enabled": new_state})}
+    )
+    save_config(updated, request.app.state.config_path)
+    request.app.state.config = updated
+
+    return MonitoringToggleResponse(enabled=new_state)

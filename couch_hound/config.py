@@ -99,12 +99,22 @@ class LoggingConfig(BaseModel):
     backup_count: int = 3
 
 
+class AutoDisableConfig(BaseModel):
+    person_detection: bool = False
+
+
+class MonitoringConfig(BaseModel):
+    enabled: bool = True
+    auto_disable: AutoDisableConfig = Field(default_factory=AutoDisableConfig)
+
+
 class AppConfig(BaseModel):
     camera: CameraConfig = Field(default_factory=CameraConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     cooldown: CooldownConfig = Field(default_factory=CooldownConfig)
     actions: list[ActionConfig] = Field(default_factory=list)
     escalation: EscalationConfig = Field(default_factory=EscalationConfig)
+    monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

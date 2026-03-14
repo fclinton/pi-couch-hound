@@ -233,6 +233,7 @@ async def ws_status(websocket: WebSocket) -> None:
             status_msg: dict[str, Any] = {
                 **metrics,
                 "pipeline_state": str(pipeline.state),
+                "monitoring_enabled": pipeline.monitoring_enabled,
                 "detection_count": pipeline.stats.detection_count,
                 "last_detection_time": pipeline.stats.last_detection_time,
             }

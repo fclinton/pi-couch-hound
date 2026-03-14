@@ -9,6 +9,7 @@ from couch_hound.config import (
     AppConfig,
     EscalationConfig,
     EscalationLevelConfig,
+    MonitoringConfig,
     load_config,
     save_config,
 )
@@ -96,3 +97,26 @@ def test_escalation_max_levels():
             enabled=True,
             levels=[EscalationLevelConfig(delay=i) for i in range(6)],
         )
+
+
+def test_default_monitoring_config():
+    """Default monitoring config should be enabled with auto_disable off."""
+    config = AppConfig()
+    assert config.monitoring.enabled is True
+    assert config.monitoring.auto_disable.person_detection is False
+
+
+def test_monitoring_config_roundtrip():
+    """Monitoring config should round-trip through YAML."""
+    config = AppConfig(
+        monitoring=MonitoringConfig(enabled=False),
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+        path = Path(f.name)
+
+    save_config(config, path)
+    loaded = load_config(path)
+    assert loaded.monitoring.enabled is False
+    assert loaded.monitoring.auto_disable.person_detection is False
+    path.unlink()
