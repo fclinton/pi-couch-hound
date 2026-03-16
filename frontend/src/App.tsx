@@ -1,14 +1,16 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/layout/Layout";
-import Dashboard from "./pages/Dashboard";
-import Events from "./pages/Events";
-import EventStats from "./pages/EventStats";
-import EventDetail from "./pages/EventDetail";
-import Settings from "./pages/Settings";
-import Login from "./pages/Login";
-import Setup from "./pages/Setup";
 import { useAuthStatus } from "./api/auth";
 import { useAuthStore } from "./stores/authStore";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Events = lazy(() => import("./pages/Events"));
+const EventStats = lazy(() => import("./pages/EventStats"));
+const EventDetail = lazy(() => import("./pages/EventDetail"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Login = lazy(() => import("./pages/Login"));
+const Setup = lazy(() => import("./pages/Setup"));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { data, isLoading } = useAuthStatus();
@@ -51,8 +53,15 @@ function RedirectIfSetupDone({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const Loading = () => (
+  <div className="flex h-screen items-center justify-center">
+    <p className="text-sm text-gray-500">Loading...</p>
+  </div>
+);
+
 function App() {
   return (
+    <Suspense fallback={<Loading />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -77,6 +86,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }
 
