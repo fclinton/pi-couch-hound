@@ -171,10 +171,15 @@ class DetectionPipeline:
 
             detections = await asyncio.to_thread(self._detector.detect, frame)
 
+            # Update cached detections for the stream overlay (all classes)
+            self._last_detections = detections
+
+            # Filter to target detections only for action dispatch
+            target_detections = [d for d in detections if d.is_target]
             if self._config.detection.roi.enabled:
-                detections = [
+                target_detections = [
                     d
-                    for d in detections
+                    for d in target_detections
                     if bbox_in_roi(
                         d.bbox,
                         self._config.detection.roi.polygon,
@@ -182,14 +187,11 @@ class DetectionPipeline:
                     )
                 ]
 
-            # Update cached detections for the stream overlay
-            self._last_detections = detections
-
             if self._config.escalation.enabled:
-                await self._escalation_dispatch(detections)
+                await self._escalation_dispatch(target_detections)
             else:
-                if detections and self._cooldown.can_trigger():
-                    best = max(detections, key=lambda d: d.confidence)
+                if target_detections and self._cooldown.can_trigger():
+                    best = max(target_detections, key=lambda d: d.confidence)
                     self._cooldown.record_trigger()
                     await self._dispatch(best)
                     self._stats.detection_count += 1

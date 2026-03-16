@@ -22,12 +22,18 @@ router = APIRouter()
 JPEG_QUALITY = 70
 
 # Bounding box drawing constants
-BBOX_COLOR = (0, 255, 0)  # Green in BGR
 BBOX_THICKNESS = 2
 LABEL_FONT_SCALE = 0.6
 LABEL_THICKNESS = 1
-LABEL_BG_COLOR = (0, 255, 0)
 LABEL_TEXT_COLOR = (0, 0, 0)
+
+# Target detection colors (green)
+TARGET_BBOX_COLOR = (0, 255, 0)
+TARGET_LABEL_BG_COLOR = (0, 255, 0)
+
+# Non-target detection colors (gray)
+NONTARGET_BBOX_COLOR = (128, 128, 128)
+NONTARGET_LABEL_BG_COLOR = (128, 128, 128)
 
 
 def draw_detections(frame: npt.NDArray[Any], detections: list[Detection]) -> npt.NDArray[Any]:
@@ -47,7 +53,10 @@ def draw_detections(frame: npt.NDArray[Any], detections: list[Detection]) -> npt
         x2 = int(det.bbox[2] * w)
         y2 = int(det.bbox[3] * h)
 
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), BBOX_COLOR, BBOX_THICKNESS)
+        bbox_color = TARGET_BBOX_COLOR if det.is_target else NONTARGET_BBOX_COLOR
+        label_bg = TARGET_LABEL_BG_COLOR if det.is_target else NONTARGET_LABEL_BG_COLOR
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), bbox_color, BBOX_THICKNESS)
 
         label = f"{det.label} {det.confidence:.2f}"
         (text_w, text_h), baseline = cv2.getTextSize(
@@ -58,7 +67,7 @@ def draw_detections(frame: npt.NDArray[Any], detections: list[Detection]) -> npt
             annotated,
             (x1, y1 - text_h - baseline - 4),
             (x1 + text_w, y1),
-            LABEL_BG_COLOR,
+            label_bg,
             cv2.FILLED,
         )
         cv2.putText(

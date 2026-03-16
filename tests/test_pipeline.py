@@ -46,7 +46,9 @@ def _make_mock_detector(
     det.load = MagicMock()
     det.unload = MagicMock()
     if detections is None:
-        detections = [Detection(label="dog", confidence=0.92, bbox=[0.1, 0.2, 0.5, 0.6])]
+        detections = [
+            Detection(label="dog", confidence=0.92, bbox=[0.1, 0.2, 0.5, 0.6], is_target=True)
+        ]
     det.detect = MagicMock(return_value=detections)
     return det
 
