@@ -130,3 +130,68 @@ class Detector:
             )
 
         return detections
+
+    def detect_with_threshold(
+        self, frame: npt.NDArray[Any], confidence_threshold: float
+    ) -> list[Detection]:
+        """Run inference with an overridden confidence threshold."""
+        original = self._config.confidence_threshold
+        self._config.confidence_threshold = confidence_threshold
+        try:
+            return self.detect(frame)
+        finally:
+            self._config.confidence_threshold = original
+
+    def detect_region(
+        self,
+        frame: npt.NDArray[Any],
+        region: list[float],
+        confidence_threshold: float | None = None,
+        padding: float = 0.0,
+    ) -> list[Detection]:
+        """Crop a region from the frame, run detection, and remap bboxes.
+
+        Args:
+            frame: Full-resolution frame (H, W, 3).
+            region: Normalized [x1, y1, x2, y2] bounding box to crop.
+            confidence_threshold: Override threshold for this detection pass.
+            padding: Fraction of region size to add as padding on each side.
+
+        Returns:
+            Detections with bboxes mapped back to full-frame normalized coords.
+        """
+        h, w = frame.shape[:2]
+        rx1, ry1, rx2, ry2 = region
+
+        # Add padding around the anchor region
+        rw, rh = rx2 - rx1, ry2 - ry1
+        px1 = max(0.0, rx1 - rw * padding)
+        py1 = max(0.0, ry1 - rh * padding)
+        px2 = min(1.0, rx2 + rw * padding)
+        py2 = min(1.0, ry2 + rh * padding)
+
+        # Convert to pixel coordinates and crop
+        cx1, cy1 = int(px1 * w), int(py1 * h)
+        cx2, cy2 = int(px2 * w), int(py2 * h)
+
+        # Ensure minimum crop size
+        if cx2 - cx1 < 10 or cy2 - cy1 < 10:
+            return []
+
+        cropped = frame[cy1:cy2, cx1:cx2]
+
+        threshold = confidence_threshold or self._config.confidence_threshold
+        detections = self.detect_with_threshold(cropped, threshold)
+
+        # Remap bboxes from crop-local normalized coords to full-frame normalized
+        crop_w = px2 - px1
+        crop_h = py2 - py1
+        for det in detections:
+            det.bbox = [
+                px1 + det.bbox[0] * crop_w,  # x1
+                py1 + det.bbox[1] * crop_h,  # y1
+                px1 + det.bbox[2] * crop_w,  # x2
+                py1 + det.bbox[3] * crop_h,  # y2
+            ]
+
+        return detections

@@ -169,3 +169,97 @@ class TestDetector:
         detector._interpreter = MagicMock()
         detector.unload()
         assert detector._interpreter is None
+
+    def test_detect_with_threshold_overrides_config(self) -> None:
+        from couch_hound.detector import Detector
+
+        labels = ["dog", "cat"]
+        interp = _make_interpreter_mock(
+            labels,
+            [("dog", 0.45, [0.1, 0.2, 0.5, 0.6])],
+        )
+        config = DetectionConfig(confidence_threshold=0.60, target_label="dog")
+        detector = Detector(config)
+        detector._interpreter = interp
+        detector._input_details = interp.get_input_details()
+        detector._output_details = interp.get_output_details()
+        detector._labels = labels
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Normal threshold (0.60) filters it out
+        assert len(detector.detect(frame)) == 0
+        # Lower threshold picks it up
+        results = detector.detect_with_threshold(frame, 0.40)
+        assert len(results) == 1
+        assert results[0].label == "dog"
+        # Original threshold is restored
+        assert config.confidence_threshold == pytest.approx(0.60)
+
+    def test_detect_region_crops_and_remaps(self) -> None:
+        from couch_hound.detector import Detector
+
+        labels = ["dog", "cat"]
+        # Detection in crop-local coords: dog at center of crop
+        interp = _make_interpreter_mock(
+            labels,
+            [("dog", 0.85, [0.2, 0.2, 0.8, 0.8])],
+        )
+        config = DetectionConfig(confidence_threshold=0.50, target_label="dog")
+        detector = Detector(config)
+        detector._interpreter = interp
+        detector._input_details = interp.get_input_details()
+        detector._output_details = interp.get_output_details()
+        detector._labels = labels
+
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Region covering the right half of the frame
+        region = [0.5, 0.0, 1.0, 1.0]
+
+        results = detector.detect_region(frame, region, padding=0.0)
+        assert len(results) == 1
+        det = results[0]
+        assert det.label == "dog"
+        # bbox should be remapped: x = 0.5 + local * 0.5
+        assert det.bbox[0] == pytest.approx(0.5 + 0.2 * 0.5)  # x1 = 0.6
+        assert det.bbox[1] == pytest.approx(0.0 + 0.2 * 1.0)  # y1 = 0.2
+        assert det.bbox[2] == pytest.approx(0.5 + 0.8 * 0.5)  # x2 = 0.9
+        assert det.bbox[3] == pytest.approx(0.0 + 0.8 * 1.0)  # y2 = 0.8
+
+    def test_detect_region_with_padding(self) -> None:
+        from couch_hound.detector import Detector
+
+        labels = ["dog"]
+        interp = _make_interpreter_mock(
+            labels,
+            [("dog", 0.90, [0.5, 0.5, 0.6, 0.6])],
+        )
+        config = DetectionConfig(confidence_threshold=0.50, target_label="dog")
+        detector = Detector(config)
+        detector._interpreter = interp
+        detector._input_details = interp.get_input_details()
+        detector._output_details = interp.get_output_details()
+        detector._labels = labels
+
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Small region in center, with 50% padding
+        region = [0.4, 0.4, 0.6, 0.6]
+        results = detector.detect_region(frame, region, padding=0.5)
+        assert len(results) == 1
+        # Padded region: x=[0.3, 0.7], y=[0.3, 0.7] (0.2 width * 0.5 = 0.1 padding)
+        det = results[0]
+        assert det.bbox[0] == pytest.approx(0.3 + 0.5 * 0.4)  # x1
+        assert det.bbox[1] == pytest.approx(0.3 + 0.5 * 0.4)  # y1
+
+    def test_detect_region_tiny_crop_returns_empty(self) -> None:
+        from couch_hound.detector import Detector
+
+        config = DetectionConfig(confidence_threshold=0.50, target_label="dog")
+        detector = Detector(config)
+        detector._interpreter = MagicMock()
+
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Tiny region that results in <10px crop
+        region = [0.0, 0.0, 0.005, 0.005]
+        results = detector.detect_region(frame, region, padding=0.0)
+        assert results == []

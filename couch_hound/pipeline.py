@@ -8,12 +8,14 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import numpy.typing as npt
 
 from couch_hound.actions import create_action
 from couch_hound.actions.base import BaseAction
 from couch_hound.camera import Camera
-from couch_hound.config import AppConfig
+from couch_hound.config import AppConfig, TwoStageConfig
 from couch_hound.cooldown import CooldownManager
 from couch_hound.detector import Detection, Detector
 from couch_hound.escalation import EscalationManager
@@ -221,6 +223,59 @@ class DetectionPipeline:
         if self._state != PipelineState.ERROR:
             self._state = PipelineState.STOPPED
 
+    async def _two_stage_detect(
+        self,
+        frame: npt.NDArray[Any],
+        two_stage_cfg: TwoStageConfig,
+    ) -> list[Detection]:
+        """Two-stage detection: find anchor, then detect at higher resolution.
+
+        Stage 1: Run scene-wide detection to locate the anchor object (e.g. couch).
+        Stage 2: Crop the anchor region from the full-res frame, re-run detection.
+                 The crop gets resized to 300x300, giving ~2-3x more detail.
+        """
+        # Stage 1: Find anchor objects at a lower threshold
+        scene_detections = await asyncio.to_thread(
+            self._detector.detect_with_threshold,
+            frame,
+            two_stage_cfg.anchor_confidence,
+        )
+
+        anchors = [d for d in scene_detections if d.label == two_stage_cfg.anchor_label]
+
+        if not anchors:
+            # No anchor found — fall back to normal single-stage detection
+            return await asyncio.to_thread(self._detector.detect, frame)
+
+        # Stage 2: Run detection within each anchor region
+        all_detections: list[Detection] = list(scene_detections)
+        seen_labels: set[str] = set()
+
+        for anchor in anchors:
+            region_detections = await asyncio.to_thread(
+                self._detector.detect_region,
+                frame,
+                anchor.bbox,
+                two_stage_cfg.second_stage_confidence,
+                two_stage_cfg.padding,
+            )
+            for det in region_detections:
+                # Avoid duplicating the anchor itself
+                if det.label == two_stage_cfg.anchor_label:
+                    continue
+                # Use the best detection per label from region detections
+                key = f"{det.label}:{det.bbox[0]:.2f},{det.bbox[1]:.2f}"
+                if key not in seen_labels:
+                    seen_labels.add(key)
+                    all_detections.append(det)
+
+        logger.debug(
+            "Two-stage: %d anchor(s), %d total detections",
+            len(anchors),
+            len(all_detections),
+        )
+        return all_detections
+
     async def _detection_loop(self) -> None:
         """Core detection loop: grab frame, detect, filter, dispatch."""
         while not self._stop_event.is_set():
@@ -229,7 +284,11 @@ class DetectionPipeline:
                 await asyncio.sleep(0.1)
                 continue
 
-            detections = await asyncio.to_thread(self._detector.detect, frame)
+            two_stage = self._config.detection.two_stage
+            if two_stage.enabled:
+                detections = await self._two_stage_detect(frame, two_stage)
+            else:
+                detections = await asyncio.to_thread(self._detector.detect, frame)
 
             # Update cached detections for the stream overlay (all classes)
             self._last_detections = detections

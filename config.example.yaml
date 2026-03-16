@@ -18,6 +18,12 @@ detection:
     enabled: false
     polygon: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
     min_overlap: 0.3
+  two_stage:
+    enabled: false               # detect anchor first, then higher-res crop
+    anchor_label: couch           # object to find in stage 1 (scene scan)
+    anchor_confidence: 0.40       # low threshold — couches are easy to spot
+    padding: 0.15                 # expand crop by 15% on each side
+    second_stage_confidence: 0.40 # lower threshold for the higher-res pass
 
 # ── Cooldown ────────────────────────────────────────
 cooldown:
