@@ -2,19 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
-from couch_hound.config import AppConfig, save_config
+from couch_hound.config import AppConfig, SslConfig, save_config
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["config"])
 
 SECTION_FIELDS = frozenset(AppConfig.model_fields.keys())
+
+
+def _ssl_changed(old: SslConfig, new: SslConfig) -> bool:
+    """Return True if SSL settings changed in a way that requires a server restart."""
+    return old.model_dump() != new.model_dump()
+
+
+def _schedule_restart() -> None:
+    """Schedule a delayed process exit so the HTTP response can flush first.
+
+    Systemd (Restart=always) will restart the process with the new config.
+    Same pattern used by UpdateManager.apply_update.
+    """
+    loop = asyncio.get_running_loop()
+    loop.call_later(2, os._exit, 75)
+    logger.info("Server restart scheduled in 2 seconds for SSL config change")
 
 
 @router.get("/config")
@@ -27,6 +45,8 @@ async def get_config(request: Request) -> dict[str, Any]:
 @router.put("/config")
 async def replace_config(body: dict[str, Any], request: Request) -> dict[str, Any]:
     """Replace the entire configuration, validate, persist to YAML, and hot-reload."""
+    old_ssl = request.app.state.config.web.ssl
+
     try:
         new_config = AppConfig(**body)
     except ValidationError as exc:
@@ -35,7 +55,12 @@ async def replace_config(body: dict[str, Any], request: Request) -> dict[str, An
     save_config(new_config, request.app.state.config_path)
     request.app.state.config = new_config
     logger.info("Full config replaced and hot-reloaded")
-    return new_config.model_dump(mode="json")
+
+    result = new_config.model_dump(mode="json")
+    if _ssl_changed(old_ssl, new_config.web.ssl):
+        result["_restart"] = True
+        _schedule_restart()
+    return result
 
 
 @router.patch("/config/{section}")
@@ -54,6 +79,7 @@ async def patch_config_section(
         )
 
     config: AppConfig = request.app.state.config
+    old_ssl = config.web.ssl
     current_data = config.model_dump(mode="json")
 
     # For list-typed sections (like actions), replace entirely rather than merge
@@ -72,4 +98,9 @@ async def patch_config_section(
     save_config(new_config, request.app.state.config_path)
     request.app.state.config = new_config
     logger.info("Config section '%s' updated and hot-reloaded", section)
-    return new_config.model_dump(mode="json")
+
+    result = new_config.model_dump(mode="json")
+    if section == "web" and _ssl_changed(old_ssl, new_config.web.ssl):
+        result["_restart"] = True
+        _schedule_restart()
+    return result

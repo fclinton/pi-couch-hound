@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -113,3 +114,53 @@ def test_put_then_get_roundtrip(config_client: TestClient):
     data = response.json()
     assert data["detection"]["confidence_threshold"] == 0.75
     assert data["web"]["port"] == 3000
+
+
+@patch("couch_hound.api.routes_config._schedule_restart")
+def test_patch_web_ssl_change_triggers_restart(mock_restart, config_client: TestClient):
+    """PATCH /api/config/web with SSL change should include _restart flag."""
+    response = config_client.patch(
+        "/api/config/web",
+        json={"ssl": {"enabled": True, "self_signed": True}},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["_restart"] is True
+    mock_restart.assert_called_once()
+
+
+@patch("couch_hound.api.routes_config._schedule_restart")
+def test_patch_web_no_ssl_change_no_restart(mock_restart, config_client: TestClient):
+    """PATCH /api/config/web without SSL change should not include _restart."""
+    response = config_client.patch("/api/config/web", json={"port": 9090})
+    assert response.status_code == 200
+    data = response.json()
+    assert "_restart" not in data
+    mock_restart.assert_not_called()
+
+
+@patch("couch_hound.api.routes_config._schedule_restart")
+def test_put_config_ssl_change_triggers_restart(mock_restart, config_client: TestClient):
+    """PUT /api/config with SSL change should include _restart flag."""
+    cfg = AppConfig()
+    cfg.web.ssl.enabled = True
+    cfg.web.ssl.self_signed = True
+
+    response = config_client.put("/api/config", json=cfg.model_dump(mode="json"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["_restart"] is True
+    mock_restart.assert_called_once()
+
+
+@patch("couch_hound.api.routes_config._schedule_restart")
+def test_put_config_no_ssl_change_no_restart(mock_restart, config_client: TestClient):
+    """PUT /api/config without SSL change should not include _restart."""
+    cfg = AppConfig()
+    cfg.web.port = 9999
+
+    response = config_client.put("/api/config", json=cfg.model_dump(mode="json"))
+    assert response.status_code == 200
+    data = response.json()
+    assert "_restart" not in data
+    mock_restart.assert_not_called()

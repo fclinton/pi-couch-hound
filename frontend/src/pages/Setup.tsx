@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSetup } from "@/api/auth";
 import { useUpdateConfigSection } from "@/api/config";
+import { pollForRestart } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 
 type Step = "account" | "ssl";
@@ -20,6 +21,9 @@ export default function Setup() {
   const [selfSigned, setSelfSigned] = useState(true);
   const [certfile, setCertfile] = useState("");
   const [keyfile, setKeyfile] = useState("");
+
+  // Restart state
+  const [restarting, setRestarting] = useState(false);
 
   const navigate = useNavigate();
   const setup = useSetup();
@@ -63,8 +67,17 @@ export default function Setup() {
         },
       },
       {
-        onSuccess: () => {
-          navigate("/", { replace: true });
+        onSuccess: (data) => {
+          if (data._restart) {
+            setRestarting(true);
+            const targetBase = `https://${window.location.hostname}:${data.web.port}`;
+            pollForRestart(targetBase).then(
+              () => { window.location.href = `${targetBase}/`; },
+              () => { window.location.href = `${targetBase}/`; },
+            );
+          } else {
+            navigate("/", { replace: true });
+          }
         },
       },
     );
@@ -236,6 +249,14 @@ export default function Setup() {
               <p className="text-sm text-red-600">
                 Failed to save SSL settings. Please try again.
               </p>
+            )}
+
+            {restarting && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+                <p className="text-sm text-blue-700">
+                  Restarting server and redirecting to HTTPS...
+                </p>
+              </div>
             )}
 
             <div className="flex gap-3">

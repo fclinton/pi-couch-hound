@@ -146,6 +146,7 @@ export interface AppConfig {
   web: WebConfig;
   logging: LoggingConfig;
   update: UpdateConfig;
+  _restart?: boolean;
 }
 
 export interface EventStatsResponse {
