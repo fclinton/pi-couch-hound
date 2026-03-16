@@ -12,13 +12,14 @@ from fastapi.testclient import TestClient
 
 from couch_hound.api.websocket import (
     ConnectionManager,
+    draw_debug_overlay,
     draw_detections,
     encode_frame_jpeg,
 )
 from couch_hound.api.websocket import (
     router as ws_router,
 )
-from couch_hound.detector import Detection
+from couch_hound.detector import Detection, SnakeDebugInfo
 from couch_hound.pipeline import PipelineState, PipelineStats
 
 
@@ -83,6 +84,54 @@ class TestDrawDetections:
         assert result is not frame
         # Both detections should be drawn (non-zero pixels)
         assert result.sum() > 0
+
+
+# ---------------------------------------------------------------------------
+# Helper: draw_debug_overlay
+# ---------------------------------------------------------------------------
+
+
+class TestDrawDebugOverlay:
+    def test_draws_anchor_and_tiles(self):
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        debug_info = SnakeDebugInfo(
+            anchor_bbox=[0.1, 0.1, 0.9, 0.9],
+            tile_bboxes=[[0.2, 0.2, 0.5, 0.5], [0.5, 0.2, 0.8, 0.5]],
+            contour_points=[[[100, 100], [200, 100], [200, 200], [100, 200]]],
+            crop_offset=(128, 72),
+            crop_size=(1024, 576),
+        )
+        result = draw_debug_overlay(frame, debug_info)
+        # Should be a copy, not the original
+        assert result is not frame
+        # Should have drawn something (frame should no longer be all black)
+        assert result.sum() > 0
+
+    def test_handles_empty_contours(self):
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        debug_info = SnakeDebugInfo(
+            anchor_bbox=[0.1, 0.1, 0.9, 0.9],
+            tile_bboxes=[[0.1, 0.1, 0.9, 0.9]],
+            contour_points=[],
+            crop_offset=(64, 48),
+            crop_size=(512, 384),
+        )
+        result = draw_debug_overlay(frame, debug_info)
+        # Should still draw anchor + tiles without crashing
+        assert result.sum() > 0
+
+    def test_does_not_mutate_original(self):
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        original = frame.copy()
+        debug_info = SnakeDebugInfo(
+            anchor_bbox=[0.2, 0.2, 0.8, 0.8],
+            tile_bboxes=[[0.3, 0.3, 0.7, 0.7]],
+            contour_points=[],
+            crop_offset=(0, 0),
+            crop_size=(640, 480),
+        )
+        draw_debug_overlay(frame, debug_info)
+        assert np.array_equal(frame, original)
 
 
 # ---------------------------------------------------------------------------

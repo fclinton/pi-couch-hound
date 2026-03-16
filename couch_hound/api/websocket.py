@@ -8,11 +8,12 @@ import logging
 from typing import Any
 
 import cv2
+import numpy as np
 import numpy.typing as npt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from couch_hound.detector import Detection
+from couch_hound.detector import Detection, SnakeDebugInfo
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,77 @@ def draw_detections(frame: npt.NDArray[Any], detections: list[Detection]) -> npt
             LABEL_TEXT_COLOR,
             LABEL_THICKNESS,
         )
+
+    return annotated
+
+
+# Debug overlay colors
+DEBUG_ANCHOR_COLOR = (255, 165, 0)  # orange — anchor region
+DEBUG_TILE_COLOR = (0, 255, 255)  # cyan — inference tiles
+DEBUG_CONTOUR_COLOR = (255, 0, 255)  # magenta — snake contours
+DEBUG_FONT_SCALE = 0.5
+DEBUG_LABEL_COLOR = (255, 255, 255)
+
+
+def draw_debug_overlay(
+    frame: npt.NDArray[Any],
+    debug_info: SnakeDebugInfo,
+) -> npt.NDArray[Any]:
+    """Draw snake debug visualisation: anchor box, contours, and tile regions."""
+    annotated = frame.copy()
+    h, w = annotated.shape[:2]
+
+    # 1. Draw anchor region (orange dashed-style thick rect)
+    ab = debug_info.anchor_bbox
+    ax1, ay1 = int(ab[0] * w), int(ab[1] * h)
+    ax2, ay2 = int(ab[2] * w), int(ab[3] * h)
+    cv2.rectangle(annotated, (ax1, ay1), (ax2, ay2), DEBUG_ANCHOR_COLOR, 2)
+    # Label the anchor
+    cv2.putText(
+        annotated,
+        "anchor",
+        (ax1 + 4, ay1 + 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        DEBUG_FONT_SCALE,
+        DEBUG_ANCHOR_COLOR,
+        1,
+    )
+
+    # 2. Draw raw contour outlines (magenta) — offset from crop to full frame
+    ox, oy = debug_info.crop_offset
+    for pts in debug_info.contour_points:
+        if len(pts) < 3:
+            continue
+        # Offset contour points from crop-local to full-frame pixel coords
+        shifted = [[p[0] + ox, p[1] + oy] for p in pts]
+        cv2.drawContours(annotated, [np.array(shifted, dtype=np.int32)], -1, DEBUG_CONTOUR_COLOR, 2)
+
+    # 3. Draw inference tile boxes (cyan) with tile index labels
+    for i, tb in enumerate(debug_info.tile_bboxes):
+        tx1, ty1 = int(tb[0] * w), int(tb[1] * h)
+        tx2, ty2 = int(tb[2] * w), int(tb[3] * h)
+        cv2.rectangle(annotated, (tx1, ty1), (tx2, ty2), DEBUG_TILE_COLOR, 1)
+        cv2.putText(
+            annotated,
+            f"tile {i}",
+            (tx1 + 2, ty2 - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            DEBUG_FONT_SCALE,
+            DEBUG_TILE_COLOR,
+            1,
+        )
+
+    # 4. Summary text in top-left corner
+    summary = f"contours: {len(debug_info.contour_points)}  tiles: {len(debug_info.tile_bboxes)}"
+    cv2.putText(
+        annotated,
+        summary,
+        (8, h - 12),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        DEBUG_FONT_SCALE,
+        DEBUG_LABEL_COLOR,
+        1,
+    )
 
     return annotated
 

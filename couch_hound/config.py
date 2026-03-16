@@ -28,6 +28,17 @@ class RoiConfig(BaseModel):
     min_overlap: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
+class TwoStageConfig(BaseModel):
+    enabled: bool = False
+    anchor_label: str = "couch"
+    anchor_confidence: float = Field(default=0.40, ge=0.0, le=1.0)
+    anchor_padding: float = Field(default=0.10, ge=0.0, le=0.5)
+    second_stage_confidence: float = Field(default=0.40, ge=0.0, le=1.0)
+    min_contour_area: int = Field(default=800, ge=100, le=50000)
+    contour_padding: float = Field(default=0.25, ge=0.0, le=1.0)
+    debug_overlay: bool = False
+
+
 class DetectionConfig(BaseModel):
     model: str = "models/ssd_mobilenet_v2.tflite"
     labels: str = "models/coco_labels.txt"
@@ -35,6 +46,7 @@ class DetectionConfig(BaseModel):
     confidence_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     use_coral: bool = False
     roi: RoiConfig = Field(default_factory=RoiConfig)
+    two_stage: TwoStageConfig = Field(default_factory=TwoStageConfig)
 
 
 class CooldownConfig(BaseModel):

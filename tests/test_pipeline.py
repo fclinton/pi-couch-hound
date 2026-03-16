@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 
-from couch_hound.config import AppConfig, CooldownConfig, DetectionConfig, RoiConfig
+from couch_hound.config import (
+    AppConfig,
+    CooldownConfig,
+    DetectionConfig,
+    RoiConfig,
+    TwoStageConfig,
+)
 from couch_hound.detector import Detection
 from couch_hound.pipeline import DetectionPipeline, PipelineState
 
@@ -264,3 +270,138 @@ class TestPipelineAutoRestart:
             await pipeline._task
 
         assert pipeline.state == PipelineState.ERROR
+
+
+class TestTwoStageDetection:
+    async def test_two_stage_snake_finds_dog_via_anchor(self) -> None:
+        """Two-stage: finds couch in stage 1, then snakes contours to find dog."""
+        two_stage = TwoStageConfig(
+            enabled=True,
+            anchor_label="couch",
+            anchor_confidence=0.40,
+            anchor_padding=0.1,
+            second_stage_confidence=0.40,
+        )
+        config = AppConfig(
+            detection=DetectionConfig(two_stage=two_stage),
+            cooldown=CooldownConfig(seconds=0),
+        )
+        pipeline = DetectionPipeline(config)
+        mock_cam = _make_mock_camera(stop_after=1, pipeline=pipeline)
+
+        # Stage 1 returns a couch; snake_detect returns a dog
+        couch = Detection(
+            label="couch", confidence=0.80, bbox=[0.1, 0.2, 0.9, 0.8], is_target=False
+        )
+        dog = Detection(label="dog", confidence=0.75, bbox=[0.2, 0.3, 0.6, 0.7], is_target=True)
+
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+        mock_det.detect_with_threshold = MagicMock(return_value=[couch])
+        mock_det.snake_detect = MagicMock(return_value=([dog], None))
+
+        mock_action = MagicMock()
+        mock_action.execute = AsyncMock()
+        mock_action.name = "test_action"
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_build_actions", return_value=[mock_action]),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        # Dog was detected via two-stage snake and action fired
+        mock_action.execute.assert_called_once()
+        assert pipeline.stats.detection_count == 1
+        mock_det.snake_detect.assert_called_once()
+
+    async def test_two_stage_falls_back_when_no_anchor(self) -> None:
+        """Two-stage falls back to normal detection when no anchor found."""
+        two_stage = TwoStageConfig(
+            enabled=True,
+            anchor_label="couch",
+            anchor_confidence=0.40,
+        )
+        config = AppConfig(
+            detection=DetectionConfig(two_stage=two_stage),
+            cooldown=CooldownConfig(seconds=0),
+        )
+        pipeline = DetectionPipeline(config)
+        mock_cam = _make_mock_camera(stop_after=1, pipeline=pipeline)
+
+        dog = Detection(label="dog", confidence=0.70, bbox=[0.1, 0.2, 0.5, 0.6], is_target=True)
+
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+        # Stage 1: no couch found
+        mock_det.detect_with_threshold = MagicMock(return_value=[])
+        # Fallback single-stage finds a dog
+        mock_det.detect = MagicMock(return_value=[dog])
+
+        mock_action = MagicMock()
+        mock_action.execute = AsyncMock()
+        mock_action.name = "test_action"
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_build_actions", return_value=[mock_action]),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        # Fell back to single-stage and still detected
+        mock_det.detect.assert_called()
+        mock_action.execute.assert_called_once()
+
+    async def test_two_stage_skips_anchor_label_in_snake_results(self) -> None:
+        """Snake detections matching the anchor label are filtered out."""
+        two_stage = TwoStageConfig(
+            enabled=True,
+            anchor_label="couch",
+            anchor_confidence=0.40,
+            second_stage_confidence=0.40,
+        )
+        config = AppConfig(
+            detection=DetectionConfig(two_stage=two_stage),
+            cooldown=CooldownConfig(seconds=0),
+        )
+        pipeline = DetectionPipeline(config)
+        mock_cam = _make_mock_camera(stop_after=1, pipeline=pipeline)
+
+        couch = Detection(
+            label="couch", confidence=0.80, bbox=[0.1, 0.2, 0.9, 0.8], is_target=False
+        )
+        # Snake re-detects couch + finds a dog
+        couch2 = Detection(
+            label="couch", confidence=0.60, bbox=[0.15, 0.25, 0.85, 0.75], is_target=False
+        )
+        dog = Detection(label="dog", confidence=0.75, bbox=[0.3, 0.3, 0.5, 0.5], is_target=True)
+
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+        mock_det.detect_with_threshold = MagicMock(return_value=[couch])
+        mock_det.snake_detect = MagicMock(return_value=([couch2, dog], None))
+
+        mock_action = MagicMock()
+        mock_action.execute = AsyncMock()
+        mock_action.name = "test_action"
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_build_actions", return_value=[mock_action]),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        # Only the dog should trigger, couch2 should be filtered
+        mock_action.execute.assert_called_once()

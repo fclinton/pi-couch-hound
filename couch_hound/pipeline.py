@@ -8,14 +8,16 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import numpy.typing as npt
 
 from couch_hound.actions import create_action
 from couch_hound.actions.base import BaseAction
 from couch_hound.camera import Camera
-from couch_hound.config import AppConfig
+from couch_hound.config import AppConfig, TwoStageConfig
 from couch_hound.cooldown import CooldownManager
-from couch_hound.detector import Detection, Detector
+from couch_hound.detector import Detection, Detector, SnakeDebugInfo
 from couch_hound.escalation import EscalationManager
 from couch_hound.roi import bbox_in_roi
 from couch_hound.templates import build_context
@@ -71,6 +73,7 @@ class DetectionPipeline:
         self._connection_manager: ConnectionManager | None = None
         self._event_db: EventDatabase | None = None
         self._last_detections: list[Detection] = []
+        self._last_debug_info: SnakeDebugInfo | None = None
 
     @property
     def state(self) -> PipelineState:
@@ -221,6 +224,65 @@ class DetectionPipeline:
         if self._state != PipelineState.ERROR:
             self._state = PipelineState.STOPPED
 
+    async def _two_stage_detect(
+        self,
+        frame: npt.NDArray[Any],
+        two_stage_cfg: TwoStageConfig,
+    ) -> list[Detection]:
+        """Two-stage detection: find anchor, then snake contours for hi-res crops.
+
+        Stage 1: Run scene-wide detection to locate the anchor object (e.g. couch).
+        Stage 2: Use active-contour edge detection (snakes) to outline objects
+                 within the anchor region, then run the model on a tight 300x300
+                 crop around each contour. This gives full model resolution per
+                 object — even on a wide couch — with no wasted inference on
+                 empty cushion space.
+        """
+        # Stage 1: Find anchor objects at a lower threshold
+        scene_detections = await asyncio.to_thread(
+            self._detector.detect_with_threshold,
+            frame,
+            two_stage_cfg.anchor_confidence,
+        )
+
+        anchors = [d for d in scene_detections if d.label == two_stage_cfg.anchor_label]
+
+        if not anchors:
+            # No anchor found — fall back to normal single-stage detection
+            self._last_debug_info = None
+            return await asyncio.to_thread(self._detector.detect, frame)
+
+        # Stage 2: Snake each anchor region
+        all_detections: list[Detection] = list(scene_detections)
+        last_debug: SnakeDebugInfo | None = None
+
+        for anchor in anchors:
+            snake_detections, debug_info = await asyncio.to_thread(
+                self._detector.snake_detect,
+                frame,
+                anchor.bbox,
+                two_stage_cfg.anchor_padding,
+                two_stage_cfg.second_stage_confidence,
+                two_stage_cfg.min_contour_area,
+                two_stage_cfg.contour_padding,
+            )
+            last_debug = debug_info
+            for det in snake_detections:
+                # Skip re-detecting the anchor itself
+                if det.label == two_stage_cfg.anchor_label:
+                    continue
+                all_detections.append(det)
+
+        # Cache debug info for the stream overlay
+        self._last_debug_info = last_debug if two_stage_cfg.debug_overlay else None
+
+        logger.debug(
+            "Two-stage snake: %d anchor(s), %d total detections",
+            len(anchors),
+            len(all_detections),
+        )
+        return all_detections
+
     async def _detection_loop(self) -> None:
         """Core detection loop: grab frame, detect, filter, dispatch."""
         while not self._stop_event.is_set():
@@ -229,7 +291,12 @@ class DetectionPipeline:
                 await asyncio.sleep(0.1)
                 continue
 
-            detections = await asyncio.to_thread(self._detector.detect, frame)
+            two_stage = self._config.detection.two_stage
+            if two_stage.enabled:
+                detections = await self._two_stage_detect(frame, two_stage)
+            else:
+                self._last_debug_info = None
+                detections = await asyncio.to_thread(self._detector.detect, frame)
 
             # Update cached detections for the stream overlay (all classes)
             self._last_detections = detections
@@ -333,7 +400,11 @@ class DetectionPipeline:
 
     async def _stream_loop(self) -> None:
         """Fast frame-grab loop for live streaming with cached detection overlays."""
-        from couch_hound.api.websocket import draw_detections, encode_frame_jpeg
+        from couch_hound.api.websocket import (
+            draw_debug_overlay,
+            draw_detections,
+            encode_frame_jpeg,
+        )
 
         while not self._stop_event.is_set():
             mgr = self._connection_manager
@@ -347,6 +418,8 @@ class DetectionPipeline:
                 continue
 
             annotated = draw_detections(frame, self._last_detections)
+            if self._last_debug_info is not None:
+                annotated = draw_debug_overlay(annotated, self._last_debug_info)
             jpeg_bytes = await asyncio.to_thread(encode_frame_jpeg, annotated)
             await mgr.broadcast_frame(jpeg_bytes)
 

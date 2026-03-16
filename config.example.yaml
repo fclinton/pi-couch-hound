@@ -18,6 +18,15 @@ detection:
     enabled: false
     polygon: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
     min_overlap: 0.3
+  two_stage:
+    enabled: false                 # detect anchor first, then snake contours
+    anchor_label: couch            # object to find in stage 1 (scene scan)
+    anchor_confidence: 0.40        # low threshold — couches are easy to spot
+    anchor_padding: 0.10           # expand anchor crop by 10% on each side
+    second_stage_confidence: 0.40  # lower threshold for per-contour inference
+    min_contour_area: 800          # ignore contours smaller than this (pixels²)
+    contour_padding: 0.25          # pad each contour box by 25% for context
+    debug_overlay: false           # draw contours + tiles on live stream
 
 # ── Cooldown ────────────────────────────────────────
 cooldown:
