@@ -33,7 +33,24 @@ def auth_client(tmp_path: Path) -> Generator[TestClient, None, None]:
 
 @pytest.fixture
 def noauth_client(tmp_path: Path) -> Generator[TestClient, None, None]:
-    """Return a test client with auth disabled."""
+    """Return a test client with auth disabled but password already set."""
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.config_path = tmp_path / "config.yaml"
+        app.state.config = AppConfig(
+            web=WebConfig(
+                auth=AuthConfig(
+                    enabled=False,
+                    password_hash=hash_password("testpass123"),
+                )
+            )
+        )
+        yield client
+
+
+@pytest.fixture
+def setup_client(tmp_path: Path) -> Generator[TestClient, None, None]:
+    """Return a test client with no password configured (fresh install)."""
     app = create_app()
     with TestClient(app) as client:
         app.state.config_path = tmp_path / "config.yaml"
@@ -198,3 +215,75 @@ def test_change_password_auth_disabled(noauth_client: TestClient) -> None:
     )
     assert response.status_code == 400
     assert "not enabled" in response.json()["detail"]
+
+
+# ── POST /api/auth/setup ──
+
+
+def test_setup_success(setup_client: TestClient) -> None:
+    """First-run setup creates account, enables auth, and returns JWT."""
+    response = setup_client.post(
+        "/api/auth/setup",
+        json={"username": "myadmin", "password": "mypassword123"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+    # Auth should now be enabled in config
+    config = setup_client.app.state.config  # type: ignore[union-attr]
+    assert config.web.auth.enabled is True
+    assert config.web.auth.username == "myadmin"
+    assert config.web.auth.password_hash != ""
+
+
+def test_setup_allows_login_after(setup_client: TestClient) -> None:
+    """After setup, the configured password works for login."""
+    setup_client.post(
+        "/api/auth/setup",
+        json={"username": "admin", "password": "setuppass"},
+    )
+    response = setup_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "setuppass"},
+    )
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_setup_rejected_when_already_configured(auth_client: TestClient) -> None:
+    """Setup returns 400 when a password is already configured."""
+    response = auth_client.post(
+        "/api/auth/setup",
+        json={"username": "admin", "password": "newpass"},
+    )
+    assert response.status_code == 400
+    assert "already been completed" in response.json()["detail"]
+
+
+# ── setup_required in GET /api/auth/status ──
+
+
+def test_auth_status_setup_required(setup_client: TestClient) -> None:
+    """Auth status returns setup_required=True when no password is set."""
+    response = setup_client.get("/api/auth/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["setup_required"] is True
+    assert data["authenticated"] is False
+
+
+def test_auth_status_setup_not_required(auth_client: TestClient) -> None:
+    """Auth status returns setup_required=False when password is configured."""
+    login_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "testpass123"},
+    )
+    token = login_resp.json()["access_token"]
+    response = auth_client.get(
+        "/api/auth/status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["setup_required"] is False

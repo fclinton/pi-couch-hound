@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useUpdateConfigSection } from "@/api/config";
+import { useChangePassword } from "@/api/auth";
 import { useUpdateStatus, useCheckForUpdate, useApplyUpdate } from "@/api/update";
 import type { AppConfig } from "@/api/types";
 import { TextInput, NumberInput, Toggle, SelectInput, SaveBar } from "./FormFields";
@@ -22,7 +23,12 @@ export default function SystemTab({ config }: Props) {
   const [port, setPort] = useState(config.web.port);
   const [authEnabled, setAuthEnabled] = useState(config.web.auth.enabled);
   const [username, setUsername] = useState(config.web.auth.username);
-  const [passwordHash, setPasswordHash] = useState(config.web.auth.password_hash);
+
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const changePasswordMutation = useChangePassword();
 
   // Logging state
   const [level, setLevel] = useState(config.logging.level);
@@ -49,8 +55,7 @@ export default function SystemTab({ config }: Props) {
     host !== config.web.host ||
     port !== config.web.port ||
     authEnabled !== config.web.auth.enabled ||
-    username !== config.web.auth.username ||
-    passwordHash !== config.web.auth.password_hash;
+    username !== config.web.auth.username;
 
   const logDirty =
     level !== config.logging.level ||
@@ -71,9 +76,27 @@ export default function SystemTab({ config }: Props) {
       data: {
         host,
         port,
-        auth: { enabled: authEnabled, username, password_hash: passwordHash },
+        auth: {
+          enabled: authEnabled,
+          username,
+          password_hash: config.web.auth.password_hash,
+        },
       },
     });
+  };
+
+  const handleChangePassword = () => {
+    if (newPassword !== confirmPassword) return;
+    changePasswordMutation.mutate(
+      { current_password: currentPassword, new_password: newPassword },
+      {
+        onSuccess: () => {
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        },
+      },
+    );
   };
 
   const handleSaveLogging = () => {
@@ -111,10 +134,53 @@ export default function SystemTab({ config }: Props) {
           onChange={setAuthEnabled}
         />
         {authEnabled && (
-          <div className="grid grid-cols-2 gap-4">
+          <>
             <TextInput label="Username" value={username} onChange={setUsername} />
-            <TextInput label="Password hash" value={passwordHash} onChange={setPasswordHash} />
-          </div>
+            <div className="mt-4 space-y-3 rounded-md border border-gray-200 bg-gray-50 p-4">
+              <h4 className="text-sm font-medium text-gray-700">Change password</h4>
+              <TextInput
+                label="Current password"
+                value={currentPassword}
+                onChange={setCurrentPassword}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <TextInput
+                  label="New password"
+                  value={newPassword}
+                  onChange={setNewPassword}
+                />
+                <TextInput
+                  label="Confirm new password"
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                />
+              </div>
+              {newPassword !== "" && confirmPassword !== "" && newPassword !== confirmPassword && (
+                <p className="text-sm text-red-600">Passwords do not match.</p>
+              )}
+              {changePasswordMutation.isSuccess && (
+                <p className="text-sm text-green-600">Password changed successfully.</p>
+              )}
+              {changePasswordMutation.isError && (
+                <p className="text-sm text-red-600">
+                  Failed to change password. Check your current password.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={
+                  changePasswordMutation.isPending ||
+                  !currentPassword ||
+                  !newPassword ||
+                  newPassword !== confirmPassword
+                }
+                className="rounded-md bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {changePasswordMutation.isPending ? "Changing..." : "Change password"}
+              </button>
+            </div>
+          </>
         )}
         <SaveBar mutation={webMutation} dirty={webDirty} onSave={handleSaveWeb} />
       </section>

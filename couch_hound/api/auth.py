@@ -56,7 +56,7 @@ async def require_auth(
     Raises 401 if auth is enabled but credentials are missing/invalid.
     """
     config = request.app.state.config
-    if not config.web.auth.enabled:
+    if not config.web.auth.enabled or not config.web.auth.password_hash:
         return None
 
     if credentials is None:

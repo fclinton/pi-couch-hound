@@ -165,4 +165,15 @@ export interface AuthStatusResponse {
   auth_enabled: boolean;
   authenticated: boolean;
   username: string | null;
+  setup_required: boolean;
+}
+
+export interface SetupRequest {
+  username: string;
+  password: string;
+}
+
+export interface SetupResponse {
+  access_token: string;
+  token_type: string;
 }

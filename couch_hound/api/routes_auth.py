@@ -18,6 +18,8 @@ from couch_hound.api.schemas import (
     ChangePasswordResponse,
     LoginRequest,
     LoginResponse,
+    SetupRequest,
+    SetupResponse,
 )
 from couch_hound.config import AppConfig, save_config
 
@@ -92,9 +94,17 @@ async def auth_status(
 ) -> AuthStatusResponse:
     """Check whether auth is enabled and if the current session is valid."""
     config: AppConfig = request.app.state.config
-    auth_enabled = config.web.auth.enabled
+    auth_cfg = config.web.auth
+    setup_required = not auth_cfg.password_hash
 
-    if not auth_enabled:
+    if setup_required:
+        return AuthStatusResponse(
+            auth_enabled=auth_cfg.enabled,
+            authenticated=False,
+            setup_required=True,
+        )
+
+    if not auth_cfg.enabled:
         return AuthStatusResponse(auth_enabled=False, authenticated=False)
 
     return AuthStatusResponse(
@@ -102,3 +112,27 @@ async def auth_status(
         authenticated=username is not None,
         username=username,
     )
+
+
+@router.post("/setup")
+async def setup(request: Request, body: SetupRequest) -> SetupResponse:
+    """First-run setup: set username and password, enable auth.
+
+    Only works when no password has been configured yet.
+    """
+    config: AppConfig = request.app.state.config
+
+    if config.web.auth.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setup has already been completed",
+        )
+
+    config.web.auth.username = body.username
+    config.web.auth.password_hash = hash_password(body.password)
+    config.web.auth.enabled = True
+    save_config(config, request.app.state.config_path)
+
+    logger.info("Initial setup completed for user '%s'", body.username)
+    token = create_access_token(body.username)
+    return SetupResponse(access_token=token)
