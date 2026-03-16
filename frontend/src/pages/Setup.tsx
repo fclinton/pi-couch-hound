@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSetup } from "@/api/auth";
 import { useUpdateConfigSection } from "@/api/config";
+import { pollForRestart } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 
 type Step = "account" | "ssl";
@@ -69,10 +70,11 @@ export default function Setup() {
         onSuccess: (data) => {
           if (data._restart) {
             setRestarting(true);
-            setTimeout(() => {
-              const port = data.web.port;
-              window.location.href = `https://${window.location.hostname}:${port}/`;
-            }, 4000);
+            const targetBase = `https://${window.location.hostname}:${data.web.port}`;
+            pollForRestart(targetBase).then(
+              () => { window.location.href = `${targetBase}/`; },
+              () => { window.location.href = `${targetBase}/`; },
+            );
           } else {
             navigate("/", { replace: true });
           }

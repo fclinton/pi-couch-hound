@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useUpdateConfigSection } from "@/api/config";
+import { pollForRestart } from "@/api/client";
 import { useChangePassword } from "@/api/auth";
 import { useUpdateStatus, useCheckForUpdate, useApplyUpdate } from "@/api/update";
 import type { AppConfig } from "@/api/types";
@@ -108,14 +109,27 @@ export default function SystemTab({ config }: Props) {
           if (!data._restart) return;
           setRestarting(true);
           const sslToggled = sslEnabled !== config.web.ssl.enabled;
-          setTimeout(() => {
-            if (sslToggled) {
-              const newScheme = sslEnabled ? "https:" : "http:";
-              window.location.href = `${newScheme}//${window.location.hostname}:${port}/`;
-            } else {
-              window.location.reload();
-            }
-          }, 4000);
+          const newScheme = sslToggled
+            ? (sslEnabled ? "https:" : "http:")
+            : window.location.protocol;
+          const targetBase = `${newScheme}//${window.location.hostname}:${port}`;
+          pollForRestart(targetBase).then(
+            () => {
+              if (sslToggled) {
+                window.location.href = `${targetBase}/`;
+              } else {
+                window.location.reload();
+              }
+            },
+            () => {
+              // Timeout — try redirecting anyway
+              if (sslToggled) {
+                window.location.href = `${targetBase}/`;
+              } else {
+                window.location.reload();
+              }
+            },
+          );
         },
       },
     );
