@@ -4,7 +4,7 @@ Raspberry Pi-powered dog detector that monitors your couch and triggers configur
 
 ## Features
 
-- Real-time dog detection using MobileNet SSD v2 (TFLite)
+- Real-time dog detection using MobileNet SSD v2 (LiteRT)
 - Configurable actions: play sounds, take snapshots, HTTP webhooks, MQTT, GPIO, custom scripts
 - Web UI for live camera feed, detection history, and configuration
 - Optional Google Coral TPU acceleration

@@ -55,7 +55,7 @@ The system is split into a **Python backend** (FastAPI) that handles detection a
 ### Model
 
 - **Default model:** MobileNet SSD v2 (COCO) compiled to TensorFlow Lite — already knows the `dog` class out of the box, runs comfortably on a Pi 4/5 with no accelerator.
-- **Optional accelerator:** Google Coral USB TPU via `tflite_runtime` Edge TPU delegate for higher FPS.
+- **Optional accelerator:** Google Coral USB TPU via `ai_edge_litert` Edge TPU delegate for higher FPS.
 - **Custom model support:** Users can upload any TFLite model + labels file through the web UI and map its label index via the settings page.
 
 ### Detection Pipeline
@@ -638,7 +638,7 @@ pi-couch-hound/
 │   ├── __init__.py
 │   ├── main.py                     # Entry point — starts FastAPI + detection loop
 │   ├── camera.py                   # Frame capture abstraction
-│   ├── detector.py                 # TFLite inference wrapper
+│   ├── detector.py                 # LiteRT inference wrapper
 │   ├── actions/
 │   │   ├── __init__.py             # Action registry
 │   │   ├── base.py                 # Action base class
@@ -737,7 +737,7 @@ The database file lives at `data/events.db` (auto-created on first run).
 python >= 3.9
 fastapi                   # API framework
 uvicorn                   # ASGI server
-tflite-runtime            # TFLite inference
+ai-edge-litert            # LiteRT inference (TFLite models)
 opencv-python-headless    # Frame capture, resize, drawing
 pyyaml                    # Config persistence
 pydantic                  # Request/response validation

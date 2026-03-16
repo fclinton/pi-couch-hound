@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-coral = ["tflite-runtime>=2.14.0"]
+coral = ["ai-edge-litert>=1.0.1"]
 gpio = ["RPi.GPIO>=0.7.0"]
 dev = [
     "pytest>=7.4.0",
@@ -66,7 +66,7 @@ module = [
     "pygame.*",
     "cv2.*",
     "paho.*",
-    "tflite_runtime.*",
+    "ai_edge_litert.*",
     "numpy.*",
     "aiosqlite",
     "jwt.*",
