@@ -10,8 +10,8 @@ from pathlib import Path
 MODELS_DIR = Path("models")
 
 MODEL_URL = (
-    "https://storage.googleapis.com/download.tensorflow.org/models"
-    "/tflite/coco_ssd_mobilenet_v2_quantized_2018_06_29.zip"
+    "https://raw.githubusercontent.com/google-coral/test_data/master"
+    "/ssd_mobilenet_v2_coco_quant_postprocess.tflite"
 )
 MODEL_FILENAME = "ssd_mobilenet_v2.tflite"
 MODEL_SHA256 = None  # Set after first verified download if pinning is desired
@@ -37,19 +37,6 @@ def _report_progress(block_num: int, block_size: int, total_size: int) -> None:
         print(f"\r  Progress: {pct}%", end="", flush=True)
 
 
-def _extract_tflite_from_zip(zip_path: Path, dest: Path) -> None:
-    """Extract the .tflite file from the downloaded zip archive."""
-    import zipfile
-
-    with zipfile.ZipFile(zip_path) as zf:
-        tflite_names = [n for n in zf.namelist() if n.endswith(".tflite")]
-        if not tflite_names:
-            raise SystemExit("No .tflite file found in downloaded archive")
-        # Extract the first .tflite file found
-        with zf.open(tflite_names[0]) as src, open(dest, "wb") as dst:
-            dst.write(src.read())
-
-
 def _verify_sha256(path: Path, expected: str) -> bool:
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     return sha == expected
@@ -67,12 +54,7 @@ def setup() -> None:
         print(f"Model already exists: {model_path}")
     else:
         print(f"Downloading detection model to {model_path} ...")
-        zip_path = MODELS_DIR / "model_download.zip"
-        try:
-            _download(MODEL_URL, zip_path)
-            _extract_tflite_from_zip(zip_path, model_path)
-        finally:
-            zip_path.unlink(missing_ok=True)
+        _download(MODEL_URL, model_path)
 
         if MODEL_SHA256 and not _verify_sha256(model_path, MODEL_SHA256):
             model_path.unlink(missing_ok=True)
