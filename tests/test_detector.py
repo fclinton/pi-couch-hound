@@ -204,8 +204,11 @@ class TestDetector:
         crop = np.zeros((300, 400, 3), dtype=np.uint8)
         cv2.rectangle(crop, (100, 80), (200, 180), (255, 255, 255), -1)
 
-        regions = Detector.find_contour_regions(crop, min_contour_area=500, contour_padding=0.1)
+        regions, contours = Detector.find_contour_regions(
+            crop, min_contour_area=500, contour_padding=0.1
+        )
         assert len(regions) >= 1
+        assert len(contours) >= 1
         # The region should roughly cover the white rectangle
         x, y, w, h = regions[0]
         assert x <= 100 and y <= 80
@@ -218,8 +221,11 @@ class TestDetector:
         crop = np.zeros((300, 400, 3), dtype=np.uint8)
         cv2.rectangle(crop, (100, 100), (105, 105), (255, 255, 255), -1)
 
-        regions = Detector.find_contour_regions(crop, min_contour_area=800, contour_padding=0.1)
+        regions, contours = Detector.find_contour_regions(
+            crop, min_contour_area=800, contour_padding=0.1
+        )
         assert len(regions) == 0
+        assert len(contours) == 0
 
     def test_find_contour_regions_merges_overlapping(self) -> None:
         from couch_hound.detector import Detector
@@ -229,7 +235,9 @@ class TestDetector:
         cv2.rectangle(crop, (50, 50), (180, 150), (255, 255, 255), -1)
         cv2.rectangle(crop, (150, 50), (280, 150), (255, 255, 255), -1)
 
-        regions = Detector.find_contour_regions(crop, min_contour_area=500, contour_padding=0.1)
+        regions, _contours = Detector.find_contour_regions(
+            crop, min_contour_area=500, contour_padding=0.1
+        )
         # Should merge into a single region
         assert len(regions) == 1
 
@@ -254,11 +262,15 @@ class TestDetector:
         cv2.rectangle(frame, (700, 200), (900, 400), (255, 255, 255), -1)
 
         anchor_bbox = [0.5, 0.0, 1.0, 1.0]  # right half
-        results = detector.snake_detect(frame, anchor_bbox, anchor_padding=0.0)
+        results, debug_info = detector.snake_detect(frame, anchor_bbox, anchor_padding=0.0)
         assert len(results) >= 1
         # All bboxes should be in full-frame normalised coords (0..1)
         for det in results:
             assert all(0.0 <= v <= 1.0 for v in det.bbox)
+        # Debug info should be populated
+        assert debug_info is not None
+        assert len(debug_info.tile_bboxes) >= 1
+        assert len(debug_info.contour_points) >= 1
 
     def test_snake_detect_tiny_anchor_returns_empty(self) -> None:
         from couch_hound.detector import Detector
@@ -269,8 +281,9 @@ class TestDetector:
 
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         anchor_bbox = [0.0, 0.0, 0.005, 0.005]
-        results = detector.snake_detect(frame, anchor_bbox)
+        results, debug_info = detector.snake_detect(frame, anchor_bbox)
         assert results == []
+        assert debug_info is None
 
     def test_snake_detect_no_contours_falls_back_to_full_crop(self) -> None:
         from couch_hound.detector import Detector
@@ -291,9 +304,13 @@ class TestDetector:
         frame = np.full((720, 1280, 3), 128, dtype=np.uint8)
         anchor_bbox = [0.2, 0.2, 0.8, 0.8]
 
-        results = detector.snake_detect(frame, anchor_bbox, anchor_padding=0.0)
+        results, debug_info = detector.snake_detect(frame, anchor_bbox, anchor_padding=0.0)
         # Falls back to running on whole anchor crop
         assert len(results) >= 1
+        assert debug_info is not None
+        # Fallback: no contour points but still has tile bboxes
+        assert len(debug_info.contour_points) == 0
+        assert len(debug_info.tile_bboxes) >= 1
 
 
 class TestNms:

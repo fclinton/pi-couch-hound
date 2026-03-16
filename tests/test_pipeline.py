@@ -299,7 +299,7 @@ class TestTwoStageDetection:
         mock_det.load = MagicMock()
         mock_det.unload = MagicMock()
         mock_det.detect_with_threshold = MagicMock(return_value=[couch])
-        mock_det.snake_detect = MagicMock(return_value=[dog])
+        mock_det.snake_detect = MagicMock(return_value=([dog], None))
 
         mock_action = MagicMock()
         mock_action.execute = AsyncMock()
@@ -388,7 +388,7 @@ class TestTwoStageDetection:
         mock_det.load = MagicMock()
         mock_det.unload = MagicMock()
         mock_det.detect_with_threshold = MagicMock(return_value=[couch])
-        mock_det.snake_detect = MagicMock(return_value=[couch2, dog])
+        mock_det.snake_detect = MagicMock(return_value=([couch2, dog], None))
 
         mock_action = MagicMock()
         mock_action.execute = AsyncMock()

@@ -34,6 +34,17 @@ class Detection:
     is_target: bool = False
 
 
+@dataclass
+class SnakeDebugInfo:
+    """Debug visualisation data from a snake_detect pass."""
+
+    anchor_bbox: list[float]  # [x1, y1, x2, y2] normalised, with padding applied
+    tile_bboxes: list[list[float]]  # each [x1, y1, x2, y2] normalised
+    contour_points: list[list[list[int]]]  # raw contour point arrays (pixel coords)
+    crop_offset: tuple[int, int] = (0, 0)  # (x, y) pixel offset of anchor crop
+    crop_size: tuple[int, int] = (0, 0)  # (w, h) pixel size of anchor crop
+
+
 class Detector:
     """LiteRT object-detection model wrapper."""
 
@@ -147,7 +158,7 @@ class Detector:
         crop: npt.NDArray[Any],
         min_contour_area: int = 800,
         contour_padding: float = 0.25,
-    ) -> list[tuple[int, int, int, int]]:
+    ) -> tuple[list[tuple[int, int, int, int]], list[npt.NDArray[Any]]]:
         """Use edge-based active contours (snakes) to find object regions.
 
         Applies Canny edge detection, dilates to close gaps, then finds
@@ -155,7 +166,8 @@ class Detector:
         padded bounding box in pixel coordinates.
 
         Returns:
-            List of (x, y, w, h) bounding rects in pixel coords of *crop*.
+            Tuple of (merged bounding rects, raw contour arrays that passed
+            the area filter).  Rects are (x, y, w, h) in pixel coords.
         """
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -169,10 +181,12 @@ class Detector:
 
         ch, cw = crop.shape[:2]
         regions: list[tuple[int, int, int, int]] = []
+        kept_contours: list[npt.NDArray[Any]] = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < min_contour_area:
                 continue
+            kept_contours.append(cnt)
             x, y, w, h = cv2.boundingRect(cnt)
             # Pad the bounding rect so the model sees surrounding context
             pad_x = int(w * contour_padding)
@@ -183,7 +197,7 @@ class Detector:
             h = min(ch - y, h + 2 * pad_y)
             regions.append((x, y, w, h))
 
-        return _merge_overlapping_rects(regions)
+        return _merge_overlapping_rects(regions), kept_contours
 
     def snake_detect(
         self,
@@ -193,7 +207,7 @@ class Detector:
         confidence_threshold: float | None = None,
         min_contour_area: int = 800,
         contour_padding: float = 0.25,
-    ) -> list[Detection]:
+    ) -> tuple[list[Detection], SnakeDebugInfo | None]:
         """Detect objects by snaking contour regions within an anchor bbox.
 
         1. Crop the anchor region (+ padding) from the full-res frame.
@@ -202,6 +216,10 @@ class Detector:
            resolution — no wasted inference on empty cushions.
         4. Remap all detections back to full-frame normalised coordinates.
         5. Deduplicate with IoU-based non-max suppression.
+
+        Returns:
+            Tuple of (detections, debug_info).  ``debug_info`` is always
+            populated so callers can decide whether to render it.
         """
         fh, fw = frame.shape[:2]
         ax1, ay1, ax2, ay2 = anchor_bbox
@@ -217,23 +235,38 @@ class Detector:
         crop_x1, crop_y1 = int(px1 * fw), int(py1 * fh)
         crop_x2, crop_y2 = int(px2 * fw), int(py2 * fh)
         if crop_x2 - crop_x1 < 20 or crop_y2 - crop_y1 < 20:
-            return []
+            return [], None
 
         anchor_crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
 
         # Find object contours within the anchor crop
-        regions = self.find_contour_regions(anchor_crop, min_contour_area, contour_padding)
+        regions, raw_contours = self.find_contour_regions(
+            anchor_crop, min_contour_area, contour_padding
+        )
+        fallback = False
         if not regions:
             # No contours — run one pass on the whole anchor crop as fallback
             regions = [(0, 0, anchor_crop.shape[1], anchor_crop.shape[0])]
+            fallback = True
 
         threshold = confidence_threshold or self._config.confidence_threshold
         all_detections: list[Detection] = []
+        tile_bboxes: list[list[float]] = []
 
         for rx, ry, rw, rh in regions:
             tile = anchor_crop[ry : ry + rh, rx : rx + rw]
             if tile.shape[0] < 10 or tile.shape[1] < 10:
                 continue
+
+            # Record tile bbox in full-frame normalised coords for debug
+            tile_bboxes.append(
+                [
+                    (crop_x1 + rx) / fw,
+                    (crop_y1 + ry) / fh,
+                    (crop_x1 + rx + rw) / fw,
+                    (crop_y1 + ry + rh) / fh,
+                ]
+            )
 
             detections = self.detect_with_threshold(tile, threshold)
 
@@ -253,7 +286,21 @@ class Detector:
                 ]
                 all_detections.append(det)
 
-        return _nms(all_detections, iou_threshold=0.45)
+        # Build debug info
+        contour_pts: list[list[list[int]]] = []
+        if not fallback:
+            for cnt in raw_contours:
+                contour_pts.append(cnt.squeeze().tolist())
+
+        debug_info = SnakeDebugInfo(
+            anchor_bbox=[px1, py1, px2, py2],
+            tile_bboxes=tile_bboxes,
+            contour_points=contour_pts,
+            crop_offset=(crop_x1, crop_y1),
+            crop_size=(crop_x2 - crop_x1, crop_y2 - crop_y1),
+        )
+
+        return _nms(all_detections, iou_threshold=0.45), debug_info
 
 
 def _merge_overlapping_rects(

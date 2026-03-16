@@ -26,6 +26,7 @@ detection:
     second_stage_confidence: 0.40  # lower threshold for per-contour inference
     min_contour_area: 800          # ignore contours smaller than this (pixels²)
     contour_padding: 0.25          # pad each contour box by 25% for context
+    debug_overlay: false           # draw contours + tiles on live stream
 
 # ── Cooldown ────────────────────────────────────────
 cooldown:
