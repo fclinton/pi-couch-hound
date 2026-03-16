@@ -191,3 +191,76 @@ class TestPipelineDetection:
 
         # Pipeline should stop cleanly, not error
         assert pipeline.state == PipelineState.STOPPED
+
+
+class TestPipelineAutoRestart:
+    async def test_recovers_from_transient_error(self) -> None:
+        """Pipeline restarts after a single crash and continues running."""
+        config = AppConfig()
+        pipeline = DetectionPipeline(config)
+        mock_cam = MagicMock()
+        mock_cam.open = MagicMock()
+        mock_cam.close = MagicMock()
+        mock_cam.grab_frame = MagicMock(return_value=None)
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+
+        call_count = 0
+
+        async def detection_loop_side_effect() -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("transient camera glitch")
+            # Second call: run briefly then let stop_event end it
+            while not pipeline._stop_event.is_set():
+                await asyncio.sleep(0.01)
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(
+                pipeline,
+                "_detection_loop",
+                side_effect=detection_loop_side_effect,
+            ),
+            patch.object(pipeline, "_stream_loop", new_callable=AsyncMock),
+            patch("couch_hound.pipeline._BASE_BACKOFF_SECS", 0.01),
+        ):
+            await pipeline.start()
+            # Let it crash once and restart
+            await asyncio.sleep(0.2)
+            assert pipeline.state == PipelineState.RUNNING
+            await pipeline.stop()
+
+        assert pipeline.state == PipelineState.STOPPED
+        assert call_count == 2  # crashed once, recovered once
+
+    async def test_gives_up_after_max_retries(self) -> None:
+        """Pipeline enters ERROR state after exhausting retries."""
+        config = AppConfig()
+        pipeline = DetectionPipeline(config)
+        mock_cam = MagicMock()
+        mock_cam.open = MagicMock()
+        mock_cam.close = MagicMock()
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+
+        async def always_crash() -> None:
+            raise RuntimeError("persistent failure")
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_detection_loop", side_effect=always_crash),
+            patch.object(pipeline, "_stream_loop", new_callable=AsyncMock),
+            patch("couch_hound.pipeline._BASE_BACKOFF_SECS", 0.01),
+            patch("couch_hound.pipeline._MAX_BACKOFF_SECS", 0.01),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        assert pipeline.state == PipelineState.ERROR
