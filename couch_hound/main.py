@@ -4,12 +4,13 @@ from typing import Any
 
 import uvicorn
 
-from couch_hound.config import load_config
+from couch_hound.config import load_config, setup_logging
 
 
 def run() -> None:
     """Start the Couch Hound application."""
     config = load_config()
+    setup_logging(config.logging)
     kwargs: dict[str, Any] = {
         "host": config.web.host,
         "port": config.web.port,
