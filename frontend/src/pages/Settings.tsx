@@ -20,14 +20,14 @@ export default function Settings() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
 
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-6">
+      <div className="-mx-4 border-b border-gray-200 md:mx-0">
+        <nav className="-mb-px flex space-x-4 overflow-x-auto px-4 scrollbar-none sm:space-x-6 md:px-0">
           {tabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "border-b-2 pb-3 text-sm font-medium transition-colors",
+                "min-h-[44px] shrink-0 border-b-2 px-1 text-sm font-medium transition-colors",
                 activeTab === tab
                   ? "border-brand-500 text-brand-600"
                   : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700",
