@@ -129,7 +129,7 @@ class ConnectionManager:
     async def broadcast_frame(self, jpeg_bytes: bytes) -> None:
         """Send a JPEG frame to all stream clients."""
         disconnected: list[WebSocket] = []
-        for ws in self._stream_clients:
+        for ws in list(self._stream_clients):
             try:
                 if ws.client_state == WebSocketState.CONNECTED:
                     await ws.send_bytes(jpeg_bytes)
@@ -142,7 +142,7 @@ class ConnectionManager:
         """Send a detection event to all event clients."""
         disconnected: list[WebSocket] = []
         message = json.dumps(event)
-        for ws in self._event_clients:
+        for ws in list(self._event_clients):
             try:
                 if ws.client_state == WebSocketState.CONNECTED:
                     await ws.send_text(message)
