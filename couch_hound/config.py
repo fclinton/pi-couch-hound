@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +86,39 @@ class AuthConfig(BaseModel):
     password_hash: str = ""
 
 
+class SslConfig(BaseModel):
+    enabled: bool = False
+    certfile: str | None = None
+    keyfile: str | None = None
+    self_signed: bool = False
+
+    @model_validator(mode="after")
+    def validate_ssl_options(self) -> SslConfig:
+        if not self.enabled:
+            return self
+        has_cert = self.certfile is not None
+        has_key = self.keyfile is not None
+        if has_cert != has_key:
+            msg = "Both certfile and keyfile must be provided together"
+            raise ValueError(msg)
+        if has_cert and has_key:
+            if not Path(self.certfile).exists():  # type: ignore[arg-type]
+                msg = f"certfile not found: {self.certfile}"
+                raise ValueError(msg)
+            if not Path(self.keyfile).exists():  # type: ignore[arg-type]
+                msg = f"keyfile not found: {self.keyfile}"
+                raise ValueError(msg)
+        elif not self.self_signed:
+            msg = "SSL enabled but no certfile/keyfile or self_signed specified"
+            raise ValueError(msg)
+        return self
+
+
 class WebConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8080
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    ssl: SslConfig = Field(default_factory=SslConfig)
 
 
 class LoggingConfig(BaseModel):

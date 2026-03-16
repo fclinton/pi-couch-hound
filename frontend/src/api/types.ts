@@ -96,10 +96,18 @@ export interface AuthConfig {
   password_hash: string;
 }
 
+export interface SslConfig {
+  enabled: boolean;
+  certfile: string | null;
+  keyfile: string | null;
+  self_signed: boolean;
+}
+
 export interface WebConfig {
   host: string;
   port: number;
   auth: AuthConfig;
+  ssl: SslConfig;
 }
 
 export interface LoggingConfig {

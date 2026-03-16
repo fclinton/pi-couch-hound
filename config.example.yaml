@@ -45,6 +45,11 @@ web:
     enabled: false
     username: admin
     password_hash: ""
+  ssl:
+    enabled: false
+    certfile:              # path to PEM certificate (optional)
+    keyfile:               # path to PEM private key (optional)
+    self_signed: false     # generate self-signed cert if no cert/key provided
 
 # ── Logging ─────────────────────────────────────────
 logging:
