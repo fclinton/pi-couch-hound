@@ -30,6 +30,8 @@ def _to_response(manager: UpdateManager) -> UpdateStatusResponse:
         last_error=info.last_error,
         commits_behind=info.commits_behind,
         commit_messages=info.commit_messages,
+        requires_python=info.requires_python,
+        python_compatible=info.python_compatible,
     )
 
 
@@ -57,6 +59,11 @@ async def apply_update(request: Request) -> UpdateStatusResponse:
         raise HTTPException(status_code=409, detail="Update already in progress")
     if info.state != UpdateState.AVAILABLE:
         raise HTTPException(status_code=409, detail="No update available to apply")
+    if not info.python_compatible:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Python version incompatible: update requires {info.requires_python}",
+        )
 
     await mgr.apply_update()
     return _to_response(mgr)

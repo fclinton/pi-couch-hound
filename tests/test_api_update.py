@@ -58,3 +58,15 @@ def test_apply_update_when_available(update_client: TestClient) -> None:
 
     assert response.status_code == 200
     mock_apply.assert_called_once()
+
+
+def test_apply_update_python_incompatible(update_client: TestClient) -> None:
+    """POST /api/update/apply returns 409 when Python version is incompatible."""
+    manager = update_client.app.state.update_manager  # type: ignore[union-attr]
+    manager._info.state = UpdateState.AVAILABLE
+    manager._info.python_compatible = False
+    manager._info.requires_python = ">=3.99"
+
+    response = update_client.post("/api/update/apply")
+    assert response.status_code == 409
+    assert "Python version incompatible" in response.json()["detail"]

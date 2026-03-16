@@ -5,12 +5,15 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import yaml
+
 from couch_hound.config import (
     AppConfig,
     EscalationConfig,
     EscalationLevelConfig,
     UpdateConfig,
     load_config,
+    migrate_config,
     save_config,
 )
 
@@ -160,3 +163,67 @@ def test_update_config_roundtrip():
     assert loaded.update.maintenance_window_start == "02:00"
     assert loaded.update.maintenance_window_end == "04:00"
     path.unlink()
+
+
+def test_load_config_ignores_unknown_fields():
+    """Loading a config with unknown fields should not raise."""
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        yaml.dump({"web": {"port": 9090}, "unknown_section": {"foo": "bar"}}, f)
+        path = Path(f.name)
+
+    config = load_config(path)
+    assert config.web.port == 9090
+    path.unlink()
+
+
+def test_migrate_config_adds_new_keys(tmp_path: Path):
+    """migrate_config should add keys from example that are missing in user config."""
+    config_path = tmp_path / "config.yaml"
+    example_path = tmp_path / "config.example.yaml"
+
+    user_data = {"web": {"port": 9090}}
+    example_data = {"web": {"port": 8080, "host": "0.0.0.0"}, "cooldown": {"seconds": 30}}
+
+    with open(config_path, "w") as f:
+        yaml.dump(user_data, f)
+    with open(example_path, "w") as f:
+        yaml.dump(example_data, f)
+
+    added = migrate_config(tmp_path)
+
+    assert "web.host" in added
+    assert "cooldown" in added
+
+    with open(config_path) as f:
+        result = yaml.safe_load(f)
+
+    # User's existing value preserved
+    assert result["web"]["port"] == 9090
+    # New keys added from example
+    assert result["web"]["host"] == "0.0.0.0"
+    assert result["cooldown"] == {"seconds": 30}
+
+
+def test_migrate_config_preserves_existing(tmp_path: Path):
+    """migrate_config should not overwrite existing user values."""
+    config_path = tmp_path / "config.yaml"
+    example_path = tmp_path / "config.example.yaml"
+
+    user_data = {"web": {"port": 9090, "host": "127.0.0.1"}, "cooldown": {"seconds": 60}}
+    example_data = {"web": {"port": 8080, "host": "0.0.0.0"}, "cooldown": {"seconds": 30}}
+
+    with open(config_path, "w") as f:
+        yaml.dump(user_data, f)
+    with open(example_path, "w") as f:
+        yaml.dump(example_data, f)
+
+    added = migrate_config(tmp_path)
+
+    assert added == []
+
+    with open(config_path) as f:
+        result = yaml.safe_load(f)
+
+    assert result["web"]["port"] == 9090
+    assert result["web"]["host"] == "127.0.0.1"
+    assert result["cooldown"]["seconds"] == 60

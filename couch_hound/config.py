@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,8 @@ class UpdateConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     camera: CameraConfig = Field(default_factory=CameraConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     cooldown: CooldownConfig = Field(default_factory=CooldownConfig)
@@ -197,3 +199,49 @@ def save_config(config: AppConfig, path: Path | None = None) -> None:
     with open(config_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
     logger.info("Configuration saved to %s", config_path)
+
+
+def _deep_merge_defaults(user: dict[str, Any], example: dict[str, Any]) -> list[str]:
+    """Add keys from *example* that are missing in *user* (in-place). Return added key paths."""
+    added: list[str] = []
+    for key, value in example.items():
+        if key not in user:
+            user[key] = value
+            added.append(key)
+        elif isinstance(value, dict) and isinstance(user[key], dict):
+            for sub in _deep_merge_defaults(user[key], value):
+                added.append(f"{key}.{sub}")
+    return added
+
+
+def migrate_config(repo_dir: Path | None = None) -> list[str]:
+    """Merge new keys from config.example.yaml into config.yaml.
+
+    Preserves all existing user values. Returns a list of key paths that were added.
+    """
+    base = repo_dir or Path.cwd()
+    config_path = base / CONFIG_PATH
+    example_path = base / CONFIG_EXAMPLE_PATH
+
+    if not config_path.exists():
+        logger.info("No config.yaml found, skipping migration")
+        return []
+    if not example_path.exists():
+        logger.info("No config.example.yaml found, skipping migration")
+        return []
+
+    with open(config_path) as f:
+        user_data: dict[str, Any] = yaml.safe_load(f) or {}
+    with open(example_path) as f:
+        example_data: dict[str, Any] = yaml.safe_load(f) or {}
+
+    added = _deep_merge_defaults(user_data, example_data)
+
+    if added:
+        with open(config_path, "w") as f:
+            yaml.dump(user_data, f, default_flow_style=False, sort_keys=False)
+        logger.info("Config migrated — added new keys: %s", ", ".join(added))
+    else:
+        logger.info("Config migration: no new keys to add")
+
+    return added

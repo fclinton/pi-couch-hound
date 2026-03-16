@@ -174,3 +174,5 @@ class UpdateStatusResponse(BaseModel):
     last_error: str | None
     commits_behind: int
     commit_messages: list[str]
+    requires_python: str | None = None
+    python_compatible: bool = True
