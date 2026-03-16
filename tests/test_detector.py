@@ -1,4 +1,4 @@
-"""Tests for the TFLite detector (mocked inference)."""
+"""Tests for the LiteRT detector (mocked inference)."""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from couch_hound.config import DetectionConfig
 
 @pytest.fixture(autouse=True)
 def _mock_tflite(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inject a fake tflite_runtime module so detector.py can import it."""
-    tflite_mod = ModuleType("tflite_runtime")
-    interp_mod = ModuleType("tflite_runtime.interpreter")
+    """Inject a fake ai_edge_litert module so detector.py can import it."""
+    litert_mod = ModuleType("ai_edge_litert")
+    interp_mod = ModuleType("ai_edge_litert.interpreter")
     interp_mod.Interpreter = MagicMock  # type: ignore[attr-defined]
     interp_mod.load_delegate = MagicMock  # type: ignore[attr-defined]
-    tflite_mod.interpreter = interp_mod  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "tflite_runtime", tflite_mod)
-    monkeypatch.setitem(sys.modules, "tflite_runtime.interpreter", interp_mod)
+    litert_mod.interpreter = interp_mod  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ai_edge_litert", litert_mod)
+    monkeypatch.setitem(sys.modules, "ai_edge_litert.interpreter", interp_mod)
 
     import couch_hound.detector as det_module
 
@@ -34,7 +34,7 @@ def _make_interpreter_mock(
     labels: list[str],
     detections: list[tuple[str, float, list[float]]],
 ) -> MagicMock:
-    """Build a mock TFLite interpreter with canned outputs."""
+    """Build a mock LiteRT interpreter with canned outputs."""
     interp = MagicMock()
     interp.get_input_details.return_value = [
         {"shape": [1, 300, 300, 3], "dtype": np.uint8, "index": 0}

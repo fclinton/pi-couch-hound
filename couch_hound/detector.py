@@ -1,4 +1,4 @@
-"""TFLite inference wrapper for object detection."""
+"""LiteRT (ai-edge-litert) inference wrapper for object detection."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from couch_hound.config import DetectionConfig
 logger = logging.getLogger(__name__)
 
 try:
-    from tflite_runtime.interpreter import Interpreter  # noqa: I001
-    from tflite_runtime.interpreter import load_delegate
+    from ai_edge_litert.interpreter import Interpreter  # noqa: I001
+    from ai_edge_litert.interpreter import load_delegate
 
     _HAS_TFLITE = True
 except ImportError:
@@ -34,7 +34,7 @@ class Detection:
 
 
 class Detector:
-    """TFLite object-detection model wrapper."""
+    """LiteRT object-detection model wrapper."""
 
     def __init__(self, config: DetectionConfig) -> None:
         self._config = config
@@ -44,10 +44,10 @@ class Detector:
         self._output_details: list[dict[str, Any]] = []
 
     def load(self) -> None:
-        """Load the TFLite model and labels file."""
+        """Load the LiteRT model and labels file."""
         if not _HAS_TFLITE:
             raise RuntimeError(
-                "tflite_runtime is not installed. Install with: pip install tflite-runtime"
+                "ai-edge-litert is not installed. Install with: pip install ai-edge-litert"
             )
 
         model_path = Path(self._config.model)
