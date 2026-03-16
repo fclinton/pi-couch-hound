@@ -109,6 +109,26 @@ export interface LoggingConfig {
   backup_count: number;
 }
 
+export interface UpdateConfig {
+  enabled: boolean;
+  check_interval_minutes: number;
+  auto_apply: boolean;
+  maintenance_window_start: string | null;
+  maintenance_window_end: string | null;
+}
+
+export interface UpdateStatus {
+  state: "up_to_date" | "checking" | "available" | "applying" | "error";
+  current_commit: string;
+  remote_commit: string | null;
+  current_version: string;
+  available_version: string | null;
+  last_check_time: string | null;
+  last_error: string | null;
+  commits_behind: number;
+  commit_messages: string[];
+}
+
 export interface AppConfig {
   camera: CameraConfig;
   detection: DetectionConfig;
@@ -117,6 +137,7 @@ export interface AppConfig {
   escalation: EscalationConfig;
   web: WebConfig;
   logging: LoggingConfig;
+  update: UpdateConfig;
 }
 
 export interface EventStatsResponse {

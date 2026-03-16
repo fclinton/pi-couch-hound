@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,7 @@ from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, load_config
 from couch_hound.database import EventDatabase
 from couch_hound.pipeline import DetectionPipeline
+from couch_hound.updater import UpdateManager
 
 
 @asynccontextmanager
@@ -39,9 +41,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.pipeline = pipeline
     await pipeline.start()
 
+    # Start update manager
+    update_manager = UpdateManager(config.update)
+    app.state.update_manager = update_manager
+    update_stop = asyncio.Event()
+    update_task = await update_manager.start(update_stop)
+
     yield
 
-    # Shutdown: stop pipeline and close database
+    # Shutdown: stop update checker, pipeline, and database
+    update_stop.set()
+    if update_task is not None:
+        update_task.cancel()
+        try:
+            await update_task
+        except asyncio.CancelledError:
+            pass
     await pipeline.stop()
     await event_db.close()
 
@@ -63,6 +78,7 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_roi import router as roi_router
     from couch_hound.api.routes_snapshots import router as snapshots_router
     from couch_hound.api.routes_system import router as system_router
+    from couch_hound.api.routes_update import router as update_router
     from couch_hound.api.routes_upload import router as upload_router
     from couch_hound.api.websocket import router as ws_router
 
@@ -70,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
     app.include_router(actions_router, prefix="/api")
+    app.include_router(update_router, prefix="/api")
     app.include_router(upload_router, prefix="/api")
     app.include_router(events_router, prefix="/api")
     app.include_router(roi_router, prefix="/api")

@@ -52,3 +52,11 @@ logging:
   file: logs/couch-hound.log
   max_size_mb: 50
   backup_count: 3
+
+# ── Update ─────────────────────────────────────────
+update:
+  enabled: false
+  check_interval_minutes: 60   # how often to check for updates (5–1440)
+  auto_apply: false             # apply updates automatically
+  maintenance_window_start:     # HH:MM — start of auto-apply window (null = anytime)
+  maintenance_window_end:       # HH:MM — end of auto-apply window (null = anytime)
