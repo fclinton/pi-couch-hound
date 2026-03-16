@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -27,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 # Stream loop target: ~15 FPS when clients are connected
 _STREAM_INTERVAL = 1.0 / 15
+
+# Auto-restart settings
+_MAX_RESTART_RETRIES = 5
+_BASE_BACKOFF_SECS = 2.0
+_MAX_BACKOFF_SECS = 60.0
+_STABLE_RUN_SECS = 60.0  # reset retry counter after running this long
 
 
 class PipelineState(StrEnum):
@@ -53,6 +60,7 @@ class DetectionPipeline:
         self._state = PipelineState.STOPPED
         self._stats = PipelineStats()
         self._stop_event = asyncio.Event()
+        self._fatal_error = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._camera = Camera(config.camera)
         self._detector = Detector(config.detection)
@@ -73,6 +81,11 @@ class DetectionPipeline:
     def stats(self) -> PipelineStats:
         """Runtime detection statistics."""
         return self._stats
+
+    @property
+    def fatal_error(self) -> asyncio.Event:
+        """Set when the pipeline exhausts retries and cannot recover."""
+        return self._fatal_error
 
     def _build_actions(self) -> list[BaseAction]:
         """Instantiate action handlers from config."""
@@ -144,22 +157,69 @@ class DetectionPipeline:
         self._escalation.update_config(config.escalation)
 
     async def _run(self) -> None:
-        """Launch detection and stream loops concurrently."""
-        try:
-            await asyncio.gather(
-                self._detection_loop(),
-                self._stream_loop(),
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            self._state = PipelineState.ERROR
-            logger.exception("Detection pipeline error")
-        finally:
+        """Launch detection and stream loops, auto-restarting on failure."""
+        retries = 0
+        while not self._stop_event.is_set():
+            loop_start = time.monotonic()
+            try:
+                await asyncio.gather(
+                    self._detection_loop(),
+                    self._stream_loop(),
+                )
+                break  # clean exit via stop_event
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._camera.close()
+                self._detector.unload()
+
+                elapsed = time.monotonic() - loop_start
+                if elapsed >= _STABLE_RUN_SECS:
+                    retries = 0  # was stable, reset counter
+
+                retries += 1
+                if retries > _MAX_RESTART_RETRIES:
+                    self._state = PipelineState.ERROR
+                    logger.exception(
+                        "Pipeline crashed after %d consecutive retries, giving up",
+                        _MAX_RESTART_RETRIES,
+                    )
+                    self._fatal_error.set()
+                    return
+
+                backoff = min(_BASE_BACKOFF_SECS * (2 ** (retries - 1)), _MAX_BACKOFF_SECS)
+                logger.exception(
+                    "Pipeline error (retry %d/%d), restarting in %.1fs",
+                    retries,
+                    _MAX_RESTART_RETRIES,
+                    backoff,
+                )
+
+                # Wait for backoff, but exit early if stop is requested
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
+                    break  # stop requested during backoff
+                except TimeoutError:
+                    pass
+
+                # Re-initialise camera and detector for the retry
+                try:
+                    self._camera = Camera(self._config.camera)
+                    self._detector = Detector(self._config.detection)
+                    await asyncio.to_thread(self._camera.open)
+                    await asyncio.to_thread(self._detector.load)
+                except Exception:
+                    logger.exception("Failed to re-initialise for retry")
+                    continue  # counts as another retry on next iteration
+        else:
+            # Exited while-loop because stop_event was already set
             self._camera.close()
             self._detector.unload()
-            if self._state != PipelineState.ERROR:
-                self._state = PipelineState.STOPPED
+
+        self._camera.close()
+        self._detector.unload()
+        if self._state != PipelineState.ERROR:
+            self._state = PipelineState.STOPPED
 
     async def _detection_loop(self) -> None:
         """Core detection loop: grab frame, detect, filter, dispatch."""

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
+import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +20,8 @@ from couch_hound.config import CONFIG_PATH, load_config
 from couch_hound.database import EventDatabase
 from couch_hound.pipeline import DetectionPipeline
 from couch_hound.updater import UpdateManager
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -49,7 +54,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     update_stop = asyncio.Event()
     update_task = await update_manager.start(update_stop)
 
+    # Watchdog: if pipeline permanently fails, terminate so systemd can restart us
+    async def _pipeline_watchdog() -> None:
+        await pipeline.fatal_error.wait()
+        logger.critical("Pipeline fatal error — shutting down process for restart")
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    watchdog_task = asyncio.create_task(_pipeline_watchdog())
+
     yield
+
+    watchdog_task.cancel()
 
     # Shutdown: stop update checker, pipeline, and database
     update_stop.set()
