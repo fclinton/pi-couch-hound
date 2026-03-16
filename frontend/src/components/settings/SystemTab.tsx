@@ -24,6 +24,12 @@ export default function SystemTab({ config }: Props) {
   const [authEnabled, setAuthEnabled] = useState(config.web.auth.enabled);
   const [username, setUsername] = useState(config.web.auth.username);
 
+  // SSL state
+  const [sslEnabled, setSslEnabled] = useState(config.web.ssl.enabled);
+  const [certfile, setCertfile] = useState(config.web.ssl.certfile ?? "");
+  const [keyfile, setKeyfile] = useState(config.web.ssl.keyfile ?? "");
+  const [selfSigned, setSelfSigned] = useState(config.web.ssl.self_signed);
+
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -55,7 +61,11 @@ export default function SystemTab({ config }: Props) {
     host !== config.web.host ||
     port !== config.web.port ||
     authEnabled !== config.web.auth.enabled ||
-    username !== config.web.auth.username;
+    username !== config.web.auth.username ||
+    sslEnabled !== config.web.ssl.enabled ||
+    certfile !== (config.web.ssl.certfile ?? "") ||
+    keyfile !== (config.web.ssl.keyfile ?? "") ||
+    selfSigned !== config.web.ssl.self_signed;
 
   const logDirty =
     level !== config.logging.level ||
@@ -80,6 +90,12 @@ export default function SystemTab({ config }: Props) {
           enabled: authEnabled,
           username,
           password_hash: config.web.auth.password_hash,
+        },
+        ssl: {
+          enabled: sslEnabled,
+          certfile: certfile || null,
+          keyfile: keyfile || null,
+          self_signed: selfSigned,
         },
       },
     });
@@ -181,6 +197,40 @@ export default function SystemTab({ config }: Props) {
               </button>
             </div>
           </>
+        )}
+        <div className="border-t border-gray-200 pt-4">
+          <Toggle
+            label="Enable HTTPS"
+            description="Serve the web interface over HTTPS"
+            checked={sslEnabled}
+            onChange={setSslEnabled}
+          />
+        </div>
+        {sslEnabled && (
+          <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-4">
+            <Toggle
+              label="Use self-signed certificate"
+              description="Automatically generate a self-signed certificate"
+              checked={selfSigned}
+              onChange={setSelfSigned}
+            />
+            {!selfSigned && (
+              <div className="grid grid-cols-2 gap-4">
+                <TextInput
+                  label="Certificate file path"
+                  value={certfile}
+                  onChange={setCertfile}
+                  placeholder="/path/to/cert.pem"
+                />
+                <TextInput
+                  label="Private key file path"
+                  value={keyfile}
+                  onChange={setKeyfile}
+                  placeholder="/path/to/key.pem"
+                />
+              </div>
+            )}
+          </div>
         )}
         <SaveBar mutation={webMutation} dirty={webDirty} onSave={handleSaveWeb} />
       </section>
