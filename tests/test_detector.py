@@ -104,7 +104,7 @@ class TestDetector:
             if original_interpreter is not None:
                 det_module.Interpreter = original_interpreter  # type: ignore[attr-defined]
 
-    def test_detect_returns_filtered_detections(self) -> None:
+    def test_detect_returns_all_detections_above_threshold(self) -> None:
         from couch_hound.detector import Detector
 
         labels = ["dog", "cat", "person"]
@@ -126,11 +126,16 @@ class TestDetector:
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         results = detector.detect(frame)
 
-        assert len(results) == 1
+        # Returns both dog and cat (above threshold), but not the low-confidence dog
+        assert len(results) == 2
         assert results[0].label == "dog"
         assert results[0].confidence == pytest.approx(0.92)
+        assert results[0].is_target is True
+        assert results[1].label == "cat"
+        assert results[1].confidence == pytest.approx(0.85)
+        assert results[1].is_target is False
 
-    def test_filters_by_target_label(self) -> None:
+    def test_marks_non_target_detections(self) -> None:
         from couch_hound.detector import Detector
 
         labels = ["dog", "cat"]
@@ -145,7 +150,9 @@ class TestDetector:
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         results = detector.detect(frame)
 
-        assert len(results) == 0
+        assert len(results) == 1
+        assert results[0].label == "cat"
+        assert results[0].is_target is False
 
     def test_detect_without_load_raises(self) -> None:
         from couch_hound.detector import Detector

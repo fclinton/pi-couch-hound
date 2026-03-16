@@ -31,6 +31,7 @@ class Detection:
     label: str
     confidence: float
     bbox: list[float] = field(default_factory=list)  # [x1, y1, x2, y2] normalized
+    is_target: bool = False
 
 
 class Detector:
@@ -116,11 +117,16 @@ class Detector:
 
             class_id = int(classes[i])
             label = self._labels[class_id] if class_id < len(self._labels) else str(class_id)
-            if label != self._config.target_label:
-                continue
 
             # boxes are [y1, x1, y2, x2] normalized — convert to [x1, y1, x2, y2]
             y1, x1, y2, x2 = (float(v) for v in boxes[i])
-            detections.append(Detection(label=label, confidence=confidence, bbox=[x1, y1, x2, y2]))
+            detections.append(
+                Detection(
+                    label=label,
+                    confidence=confidence,
+                    bbox=[x1, y1, x2, y2],
+                    is_target=(label == self._config.target_label),
+                )
+            )
 
         return detections

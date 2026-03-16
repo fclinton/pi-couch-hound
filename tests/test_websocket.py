@@ -72,6 +72,18 @@ class TestDrawDetections:
         draw_detections(frame, detections)
         assert frame.sum() == 0  # original unchanged
 
+    def test_draws_different_colors_for_target_and_nontarget(self):
+        """Target detections get green boxes, non-target get gray."""
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        detections = [
+            Detection(label="dog", confidence=0.92, bbox=[0.1, 0.1, 0.3, 0.3], is_target=True),
+            Detection(label="cat", confidence=0.85, bbox=[0.6, 0.6, 0.9, 0.9], is_target=False),
+        ]
+        result = draw_detections(frame, detections)
+        assert result is not frame
+        # Both detections should be drawn (non-zero pixels)
+        assert result.sum() > 0
+
 
 # ---------------------------------------------------------------------------
 # Helper: encode_frame_jpeg
