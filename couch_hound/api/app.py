@@ -8,7 +8,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Receive, Scope, Send
 
 from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, load_config
@@ -93,9 +95,25 @@ def create_app() -> FastAPI:
     app.include_router(snapshots_router, prefix="/api")
     app.include_router(ws_router)
 
-    # Serve frontend static files if built
+    # Serve frontend static files with SPA fallback if built
     frontend_dist = Path("frontend/dist")
     if frontend_dist.is_dir():
-        app.mount("/", StaticFiles(directory=str(frontend_dist), html=True))
+        app.mount("/", SPAStaticFiles(directory=str(frontend_dist), html=True))
 
     return app
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles subclass that falls back to index.html for SPA routing."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        except Exception:
+            # If the file is not found, serve index.html for client-side routing
+            index = Path(self.directory) / "index.html"  # type: ignore[arg-type]
+            if index.is_file():
+                response = FileResponse(index)
+                await response(scope, receive, send)
+            else:
+                raise
