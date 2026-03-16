@@ -30,7 +30,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,coral]"
+
+      - name: Verify ai-edge-litert runtime
+        run: python -c "from ai_edge_litert.interpreter import Interpreter, load_delegate; print('ai-edge-litert OK')"
 
       - name: Lint with ruff
         run: ruff check couch_hound/ tests/
