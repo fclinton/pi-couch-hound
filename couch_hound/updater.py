@@ -37,6 +37,8 @@ class UpdateInfo:
     last_error: str | None = None
     commits_behind: int = 0
     commit_messages: list[str] = field(default_factory=list)
+    requires_python: str | None = None
+    python_compatible: bool = True
 
 
 class UpdateManager:
@@ -88,6 +90,8 @@ class UpdateManager:
                 self._info.available_version = None
                 self._info.commits_behind = 0
                 self._info.commit_messages = []
+                self._info.requires_python = None
+                self._info.python_compatible = True
             else:
                 self._info.state = UpdateState.AVAILABLE
                 self._info.remote_commit = remote[:8]
@@ -111,6 +115,31 @@ class UpdateManager:
                 except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                     self._info.available_version = None
 
+                # Check if remote requires a different Python version
+                try:
+                    toml_content = await self._run_git("show", f"origin/{branch}:pyproject.toml")
+                    rp_match = re.search(r'requires-python\s*=\s*"([^"]+)"', toml_content)
+                    if rp_match:
+                        self._info.requires_python = rp_match.group(1)
+                        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+                        try:
+                            spec = SpecifierSet(rp_match.group(1))
+                            current_py = (
+                                f"{sys.version_info.major}"
+                                f".{sys.version_info.minor}"
+                                f".{sys.version_info.micro}"
+                            )
+                            self._info.python_compatible = current_py in spec
+                        except InvalidSpecifier:
+                            self._info.python_compatible = True
+                    else:
+                        self._info.requires_python = None
+                        self._info.python_compatible = True
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    self._info.requires_python = None
+                    self._info.python_compatible = True
+
             self._info.last_check_time = datetime.now().isoformat()
 
         except FileNotFoundError:
@@ -130,6 +159,16 @@ class UpdateManager:
 
     async def apply_update(self) -> UpdateInfo:
         """Pull latest code, reinstall, rebuild frontend if needed, then restart."""
+        if not self._info.python_compatible:
+            self._info.state = UpdateState.ERROR
+            self._info.last_error = (
+                f"Update requires Python {self._info.requires_python}, "
+                f"but the current interpreter is Python "
+                f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}. "
+                f"Please upgrade Python before applying this update."
+            )
+            return self._info
+
         self._info.state = UpdateState.APPLYING
         self._info.last_error = None
         stashed = False
@@ -156,6 +195,14 @@ class UpdateManager:
                 check=True,
             )
             logger.info("Python package reinstalled")
+
+            # Migrate config to pick up new fields / drop removed ones
+            try:
+                from couch_hound.config import migrate_config
+
+                migrate_config(self._repo_dir)
+            except Exception as exc:
+                logger.warning("Config migration failed (continuing): %s", exc)
 
             # Check if frontend changed
             try:
@@ -247,6 +294,7 @@ class UpdateManager:
             if (
                 self._info.state == UpdateState.AVAILABLE
                 and self._config.auto_apply
+                and self._info.python_compatible
                 and self._in_maintenance_window()
             ):
                 logger.info("Auto-applying update (within maintenance window)")

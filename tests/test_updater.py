@@ -51,6 +51,7 @@ async def test_check_update_available(manager: UpdateManager) -> None:
             "3\n",  # rev-list --count
             "bbb2222 fix bug\nccc3333 add feature\nddd4444 update docs\n",  # log
             '__version__ = "0.2.0"\n',  # show __init__.py
+            'requires-python = ">=3.12"\n',  # show pyproject.toml
         ]
         info = await manager.check_for_updates()
 
@@ -59,6 +60,8 @@ async def test_check_update_available(manager: UpdateManager) -> None:
     assert len(info.commit_messages) == 3
     assert info.available_version == "0.2.0"
     assert info.remote_commit == "bbb2222\n".strip()[:8]
+    assert info.python_compatible is True
+    assert info.requires_python == ">=3.12"
 
 
 async def test_check_git_fetch_failure(manager: UpdateManager) -> None:
@@ -222,3 +225,70 @@ def test_get_info_returns_current_state(manager: UpdateManager) -> None:
     info = manager.get_info()
     assert info.state == UpdateState.UP_TO_DATE
     assert info.current_version == "0.1.0"
+
+
+async def test_check_update_python_incompatible(manager: UpdateManager) -> None:
+    """When remote requires a newer Python, python_compatible is False."""
+    with patch.object(manager, "_run_git", new_callable=AsyncMock) as mock_git:
+        mock_git.side_effect = [
+            "",  # fetch
+            "main",  # symbolic-ref
+            "aaa1111\n",  # rev-parse HEAD
+            "bbb2222\n",  # rev-parse origin/main
+            "1\n",  # rev-list --count
+            "bbb2222 bump python\n",  # log
+            '__version__ = "0.3.0"\n',  # show __init__.py
+            'requires-python = ">=3.99"\n',  # show pyproject.toml
+        ]
+        info = await manager.check_for_updates()
+
+    assert info.state == UpdateState.AVAILABLE
+    assert info.python_compatible is False
+    assert info.requires_python == ">=3.99"
+
+
+async def test_check_pyproject_parse_failure(manager: UpdateManager) -> None:
+    """When pyproject.toml can't be read, python_compatible defaults to True."""
+    call_count = 0
+
+    async def mock_run_git(*args: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        if args[0] == "fetch":
+            return ""
+        if args[0] == "symbolic-ref":
+            return "main"
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return "aaa1111\n"
+        if args[0] == "rev-parse":
+            return "bbb2222\n"
+        if args[0] == "rev-list":
+            return "1\n"
+        if args[0] == "log":
+            return "bbb2222 some change\n"
+        if args[0] == "show" and "pyproject.toml" in args[1]:
+            raise subprocess.CalledProcessError(1, "git", stderr="not found")
+        if args[0] == "show":
+            return '__version__ = "0.2.0"\n'
+        return ""
+
+    with patch.object(manager, "_run_git", side_effect=mock_run_git):
+        info = await manager.check_for_updates()
+
+    assert info.state == UpdateState.AVAILABLE
+    assert info.python_compatible is True
+    assert info.requires_python is None
+
+
+async def test_apply_refuses_incompatible_python(manager: UpdateManager) -> None:
+    """apply_update should refuse if Python version is incompatible."""
+    manager._info.state = UpdateState.AVAILABLE
+    manager._info.python_compatible = False
+    manager._info.requires_python = ">=3.99"
+
+    with patch.object(manager, "_run_git", new_callable=AsyncMock) as mock_git:
+        info = await manager.apply_update()
+
+    assert info.state == UpdateState.ERROR
+    assert ">=3.99" in (info.last_error or "")
+    mock_git.assert_not_called()
