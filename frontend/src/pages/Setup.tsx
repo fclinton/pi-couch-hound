@@ -21,6 +21,9 @@ export default function Setup() {
   const [certfile, setCertfile] = useState("");
   const [keyfile, setKeyfile] = useState("");
 
+  // Restart state
+  const [restarting, setRestarting] = useState(false);
+
   const navigate = useNavigate();
   const setup = useSetup();
   const sslMutation = useUpdateConfigSection();
@@ -63,8 +66,16 @@ export default function Setup() {
         },
       },
       {
-        onSuccess: () => {
-          navigate("/", { replace: true });
+        onSuccess: (data) => {
+          if (data._restart) {
+            setRestarting(true);
+            setTimeout(() => {
+              const port = data.web.port;
+              window.location.href = `https://${window.location.hostname}:${port}/`;
+            }, 4000);
+          } else {
+            navigate("/", { replace: true });
+          }
         },
       },
     );
@@ -236,6 +247,14 @@ export default function Setup() {
               <p className="text-sm text-red-600">
                 Failed to save SSL settings. Please try again.
               </p>
+            )}
+
+            {restarting && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+                <p className="text-sm text-blue-700">
+                  Restarting server and redirecting to HTTPS...
+                </p>
+              </div>
             )}
 
             <div className="flex gap-3">

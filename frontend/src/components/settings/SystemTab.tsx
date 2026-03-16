@@ -49,6 +49,9 @@ export default function SystemTab({ config }: Props) {
   const [windowStart, setWindowStart] = useState(config.update.maintenance_window_start ?? "");
   const [windowEnd, setWindowEnd] = useState(config.update.maintenance_window_end ?? "");
 
+  // Restart state for SSL changes
+  const [restarting, setRestarting] = useState(false);
+
   const webMutation = useUpdateConfigSection();
   const logMutation = useUpdateConfigSection();
   const updateMutation = useUpdateConfigSection();
@@ -81,24 +84,41 @@ export default function SystemTab({ config }: Props) {
     windowEnd !== (config.update.maintenance_window_end ?? "");
 
   const handleSaveWeb = () => {
-    webMutation.mutate({
-      section: "web",
-      data: {
-        host,
-        port,
-        auth: {
-          enabled: authEnabled,
-          username,
-          password_hash: config.web.auth.password_hash,
-        },
-        ssl: {
-          enabled: sslEnabled,
-          certfile: certfile || null,
-          keyfile: keyfile || null,
-          self_signed: selfSigned,
+    webMutation.mutate(
+      {
+        section: "web",
+        data: {
+          host,
+          port,
+          auth: {
+            enabled: authEnabled,
+            username,
+            password_hash: config.web.auth.password_hash,
+          },
+          ssl: {
+            enabled: sslEnabled,
+            certfile: certfile || null,
+            keyfile: keyfile || null,
+            self_signed: selfSigned,
+          },
         },
       },
-    });
+      {
+        onSuccess: (data) => {
+          if (!data._restart) return;
+          setRestarting(true);
+          const sslToggled = sslEnabled !== config.web.ssl.enabled;
+          setTimeout(() => {
+            if (sslToggled) {
+              const newScheme = sslEnabled ? "https:" : "http:";
+              window.location.href = `${newScheme}//${window.location.hostname}:${port}/`;
+            } else {
+              window.location.reload();
+            }
+          }, 4000);
+        },
+      },
+    );
   };
 
   const handleChangePassword = () => {
@@ -230,6 +250,15 @@ export default function SystemTab({ config }: Props) {
                 />
               </div>
             )}
+          </div>
+        )}
+        {restarting && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+            <p className="text-sm text-blue-700">
+              {sslEnabled !== config.web.ssl.enabled
+                ? "Restarting server and redirecting to new address..."
+                : "Restarting server..."}
+            </p>
           </div>
         )}
         <SaveBar mutation={webMutation} dirty={webDirty} onSave={handleSaveWeb} />
