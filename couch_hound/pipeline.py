@@ -315,17 +315,17 @@ class DetectionPipeline:
                 ]
 
             if self._config.escalation.enabled:
-                await self._escalation_dispatch(target_detections)
+                await self._escalation_dispatch(target_detections, frame)
             else:
                 if target_detections and self._cooldown.can_trigger():
                     best = max(target_detections, key=lambda d: d.confidence)
                     self._cooldown.record_trigger()
-                    await self._dispatch(best)
+                    await self._dispatch(best, frame)
                     self._stats.detection_count += 1
 
             await asyncio.sleep(self._config.camera.capture_interval)
 
-    async def _escalation_dispatch(self, detections: list[Detection]) -> None:
+    async def _escalation_dispatch(self, detections: list[Detection], frame: Any) -> None:
         """Drive the escalation manager and dispatch level-specific actions."""
         detected = bool(detections)
         levels_to_fire = self._escalation.update_detection(detected)
@@ -342,7 +342,7 @@ class DetectionPipeline:
             level_cfg = self._config.escalation.levels[level_idx]
             esc_vars = self._escalation.get_context_vars(level_idx)
 
-            context = build_context(
+            context: dict[str, Any] = build_context(
                 label=best.label,
                 confidence=best.confidence,
                 bbox=best.bbox,
@@ -350,6 +350,7 @@ class DetectionPipeline:
                 escalation_level=esc_vars["escalation_level"],
                 escalation_elapsed=esc_vars["escalation_elapsed"],
             )
+            context["frame"] = frame
             self._stats.last_detection_time = timestamp
 
             for action_name in level_cfg.actions:
@@ -425,15 +426,16 @@ class DetectionPipeline:
 
             await asyncio.sleep(_STREAM_INTERVAL)
 
-    async def _dispatch(self, detection: Detection) -> None:
+    async def _dispatch(self, detection: Detection, frame: Any) -> None:
         """Build context and fire all enabled actions."""
         timestamp = datetime.now(tz=UTC).isoformat()
-        context = build_context(
+        context: dict[str, Any] = build_context(
             label=detection.label,
             confidence=detection.confidence,
             bbox=detection.bbox,
             timestamp=timestamp,
         )
+        context["frame"] = frame
         self._stats.last_detection_time = timestamp
 
         for action in self._actions:
