@@ -14,7 +14,6 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # ── Defaults ──────────────────────────────────────────
-WITH_CORAL=false
 WITH_GPIO=false
 WITH_SYSTEMD=false
 NO_PROMPT=false
@@ -23,7 +22,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── Parse Arguments ───────────────────────────────────
 for arg in "$@"; do
     case "$arg" in
-        --with-coral)   WITH_CORAL=true ;;
+        --with-coral)
+            echo -e "${BLUE}[INFO]${NC} Coral TPU support requires the system library libedgetpu."
+            echo -e "${BLUE}[INFO]${NC} Install it with: sudo apt install libedgetpu1-std"
+            ;;
         --with-gpio)    WITH_GPIO=true ;;
         --with-systemd) WITH_SYSTEMD=true ;;
         --no-prompt)    NO_PROMPT=true ;;
@@ -31,7 +33,7 @@ for arg in "$@"; do
             echo "Usage: ./install.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --with-coral     Install Google Coral TPU support"
+            echo "  --with-coral     Show instructions for Google Coral TPU setup"
             echo "  --with-gpio      Install Raspberry Pi GPIO support"
             echo "  --with-systemd   Install and enable systemd service"
             echo "  --no-prompt      Skip interactive prompts (use defaults + flags)"
@@ -116,11 +118,6 @@ echo ""
 info "Installing Pi Couch Hound..."
 
 EXTRAS=""
-if [ "$WITH_CORAL" = true ] || { [ "$NO_PROMPT" = false ] && ask "Install Google Coral TPU support?"; }; then
-    EXTRAS="${EXTRAS:+$EXTRAS,}coral"
-    WITH_CORAL=true
-fi
-
 if [ "$WITH_GPIO" = true ] || { [ "$NO_PROMPT" = false ] && ask "Install Raspberry Pi GPIO support?"; }; then
     EXTRAS="${EXTRAS:+$EXTRAS,}gpio"
     WITH_GPIO=true

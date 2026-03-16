@@ -55,8 +55,11 @@ source .venv/bin/activate
 # 2. Install the package
 pip install .
 
-# Optional: Coral TPU and/or GPIO support
-pip install ".[coral,gpio]"
+# Optional: GPIO support
+pip install ".[gpio]"
+
+# Optional: Coral TPU acceleration (requires system library)
+# sudo apt install libedgetpu1-std
 
 # 3. Download the detection model
 python -m couch_hound.setup_model

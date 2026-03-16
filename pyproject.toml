@@ -25,7 +25,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-coral = ["ai-edge-litert>=1.0.1"]
 gpio = ["RPi.GPIO>=0.7.0"]
 dev = [
     "pytest>=7.4.0",
