@@ -6,6 +6,7 @@ import EventStats from "./pages/EventStats";
 import EventDetail from "./pages/EventDetail";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import { useAuthStatus } from "./api/auth";
 import { useAuthStore } from "./stores/authStore";
 
@@ -21,8 +22,30 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (data?.setup_required) {
+    return <Navigate to="/setup" replace />;
+  }
+
   if (data?.auth_enabled && !token) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function RedirectIfSetupDone({ children }: { children: React.ReactNode }) {
+  const { data, isLoading } = useAuthStatus();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-sm text-gray-500">Loading...</p>
+      </div>
+    );
+  }
+
+  if (data && !data.setup_required) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -32,6 +55,14 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route
+        path="/setup"
+        element={
+          <RedirectIfSetupDone>
+            <Setup />
+          </RedirectIfSetupDone>
+        }
+      />
       <Route
         element={
           <RequireAuth>

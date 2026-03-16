@@ -148,6 +148,17 @@ class AuthStatusResponse(BaseModel):
     auth_enabled: bool
     authenticated: bool
     username: str | None = None
+    setup_required: bool = False
+
+
+class SetupRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SetupResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 # ── Update ──
