@@ -228,11 +228,14 @@ class DetectionPipeline:
         frame: npt.NDArray[Any],
         two_stage_cfg: TwoStageConfig,
     ) -> list[Detection]:
-        """Two-stage detection: find anchor, then detect at higher resolution.
+        """Two-stage detection: find anchor, then snake contours for hi-res crops.
 
         Stage 1: Run scene-wide detection to locate the anchor object (e.g. couch).
-        Stage 2: Crop the anchor region from the full-res frame, re-run detection.
-                 The crop gets resized to 300x300, giving ~2-3x more detail.
+        Stage 2: Use active-contour edge detection (snakes) to outline objects
+                 within the anchor region, then run the model on a tight 300x300
+                 crop around each contour. This gives full model resolution per
+                 object — even on a wide couch — with no wasted inference on
+                 empty cushion space.
         """
         # Stage 1: Find anchor objects at a lower threshold
         scene_detections = await asyncio.to_thread(
@@ -247,30 +250,27 @@ class DetectionPipeline:
             # No anchor found — fall back to normal single-stage detection
             return await asyncio.to_thread(self._detector.detect, frame)
 
-        # Stage 2: Run detection within each anchor region
+        # Stage 2: Snake each anchor region
         all_detections: list[Detection] = list(scene_detections)
-        seen_labels: set[str] = set()
 
         for anchor in anchors:
-            region_detections = await asyncio.to_thread(
-                self._detector.detect_region,
+            snake_detections = await asyncio.to_thread(
+                self._detector.snake_detect,
                 frame,
                 anchor.bbox,
+                two_stage_cfg.anchor_padding,
                 two_stage_cfg.second_stage_confidence,
-                two_stage_cfg.padding,
+                two_stage_cfg.min_contour_area,
+                two_stage_cfg.contour_padding,
             )
-            for det in region_detections:
-                # Avoid duplicating the anchor itself
+            for det in snake_detections:
+                # Skip re-detecting the anchor itself
                 if det.label == two_stage_cfg.anchor_label:
                     continue
-                # Use the best detection per label from region detections
-                key = f"{det.label}:{det.bbox[0]:.2f},{det.bbox[1]:.2f}"
-                if key not in seen_labels:
-                    seen_labels.add(key)
-                    all_detections.append(det)
+                all_detections.append(det)
 
         logger.debug(
-            "Two-stage: %d anchor(s), %d total detections",
+            "Two-stage snake: %d anchor(s), %d total detections",
             len(anchors),
             len(all_detections),
         )

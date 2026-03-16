@@ -32,8 +32,10 @@ class TwoStageConfig(BaseModel):
     enabled: bool = False
     anchor_label: str = "couch"
     anchor_confidence: float = Field(default=0.40, ge=0.0, le=1.0)
-    padding: float = Field(default=0.15, ge=0.0, le=0.5)
+    anchor_padding: float = Field(default=0.10, ge=0.0, le=0.5)
     second_stage_confidence: float = Field(default=0.40, ge=0.0, le=1.0)
+    min_contour_area: int = Field(default=800, ge=100, le=50000)
+    contour_padding: float = Field(default=0.25, ge=0.0, le=1.0)
 
 
 class DetectionConfig(BaseModel):
