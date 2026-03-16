@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 from pathlib import Path
 from typing import Any, Literal
 
@@ -158,6 +159,35 @@ def load_config(path: Path | None = None) -> AppConfig:
         raw: dict[str, Any] = yaml.safe_load(f) or {}
 
     return AppConfig(**raw)
+
+
+def setup_logging(config: LoggingConfig) -> None:
+    """Configure root logger with console and rotating file handlers."""
+    root = logging.getLogger()
+    root.setLevel(config.level)
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Console handler
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    # Rotating file handler
+    log_path = Path(config.file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path,
+        maxBytes=config.max_size_mb * 1024 * 1024,
+        backupCount=config.backup_count,
+    )
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
+
+    logger.info("Logging configured: level=%s, file=%s", config.level, config.file)
 
 
 def save_config(config: AppConfig, path: Path | None = None) -> None:
