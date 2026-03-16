@@ -35,6 +35,17 @@ export interface RoiConfig {
   min_overlap: number;
 }
 
+export interface TwoStageConfig {
+  enabled: boolean;
+  anchor_label: string;
+  anchor_confidence: number;
+  anchor_padding: number;
+  second_stage_confidence: number;
+  min_contour_area: number;
+  contour_padding: number;
+  debug_overlay: boolean;
+}
+
 export interface DetectionConfig {
   model: string;
   labels: string;
@@ -42,6 +53,7 @@ export interface DetectionConfig {
   confidence_threshold: number;
   use_coral: boolean;
   roi: RoiConfig;
+  two_stage: TwoStageConfig;
 }
 
 export interface CooldownConfig {
