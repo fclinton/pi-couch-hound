@@ -29,8 +29,7 @@ export async function apiFetch<T>(
 
 /**
  * Poll a URL's /api/health endpoint until the server comes back up after a restart.
- * Waits an initial 2s for the old process to exit, then polls every 1s.
- * Resolves when the server responds, or rejects after maxWait ms.
+ * Polls every 1s. Resolves when the server responds, or rejects after maxWait ms.
  */
 export function pollForRestart(
   baseUrl: string,
@@ -49,7 +48,6 @@ export function pollForRestart(
         .catch(() => setTimeout(poll, 1000));
     }
 
-    // Wait for the old process to begin shutting down
-    setTimeout(poll, 2000);
+    poll();
   });
 }
