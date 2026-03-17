@@ -1,15 +1,28 @@
 """Entry point - starts FastAPI server and detection loop."""
 
+import logging
+import sys
 from typing import Any
 
 import uvicorn
 
-from couch_hound.config import load_config, setup_logging
+from couch_hound.config import AppConfig, load_config, setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def run() -> None:
     """Start the Couch Hound application."""
-    config = load_config()
+    try:
+        config = load_config()
+    except Exception:
+        print(  # noqa: T201
+            "WARNING: Failed to load config, starting with defaults",
+            file=sys.stderr,
+        )
+        logging.basicConfig(level=logging.WARNING)
+        logger.exception("Config load failed, using defaults")
+        config = AppConfig()
     setup_logging(config.logging)
     kwargs: dict[str, Any] = {
         "host": config.web.host,

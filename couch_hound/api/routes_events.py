@@ -17,7 +17,9 @@ router = APIRouter(tags=["events"])
 
 def _get_db(request: Request) -> EventDatabase:
     """Retrieve the event database from app state."""
-    db: EventDatabase = request.app.state.event_db
+    db: EventDatabase | None = request.app.state.event_db
+    if db is None:
+        raise HTTPException(status_code=503, detail="Event database unavailable")
     return db
 
 
@@ -70,8 +72,11 @@ async def delete_event(event_id: int, request: Request) -> Response:
     if snapshot_path is not None:
         p = Path(str(snapshot_path))
         if p.is_file():
-            p.unlink()
-            logger.info("Deleted snapshot %s", p)
+            try:
+                p.unlink()
+                logger.info("Deleted snapshot %s", p)
+            except OSError:
+                logger.warning("Failed to delete snapshot %s", p, exc_info=True)
 
     return Response(status_code=204)
 
@@ -88,7 +93,10 @@ async def bulk_delete_events(
     for sp in snapshot_paths:
         p = Path(sp)
         if p.is_file():
-            p.unlink()
-            logger.info("Deleted snapshot %s", p)
+            try:
+                p.unlink()
+                logger.info("Deleted snapshot %s", p)
+            except OSError:
+                logger.warning("Failed to delete snapshot %s", p, exc_info=True)
 
     return {"deleted": count}

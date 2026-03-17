@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -231,3 +232,27 @@ def test_upload_then_list_model(upload_client: TestClient) -> None:
     assert len(models) == 1
     assert models[0]["filename"] == "detect.tflite"
     assert models[0]["labels"] == "models/detect.txt"
+
+
+# ── File write error handling ──
+
+
+def test_upload_sound_disk_error(upload_client: TestClient) -> None:
+    """Upload returns 500 with a descriptive message when write fails."""
+    files = {"file": ("bark.wav", BytesIO(b"wav-data"), "audio/wav")}
+    with patch.object(Path, "write_bytes", side_effect=OSError("No space left on device")):
+        response = upload_client.post("/api/upload/sound", files=files)
+    assert response.status_code == 500
+    assert "Failed to save file" in response.json()["detail"]
+
+
+def test_upload_model_disk_error(upload_client: TestClient) -> None:
+    """Upload returns 500 with a descriptive message when write fails."""
+    files = {
+        "model": ("m.tflite", BytesIO(b"model"), "application/octet-stream"),
+        "labels": ("m.txt", BytesIO(b"labels"), "text/plain"),
+    }
+    with patch.object(Path, "write_bytes", side_effect=OSError("No space left on device")):
+        response = upload_client.post("/api/upload/model", files=files)
+    assert response.status_code == 500
+    assert "Failed to save file" in response.json()["detail"]

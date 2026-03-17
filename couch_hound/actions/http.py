@@ -9,6 +9,8 @@ from typing import Any
 from couch_hound.actions.base import BaseAction
 from couch_hound.templates import render_template
 
+_REQUEST_TIMEOUT = 35.0
+
 
 class HttpAction(BaseAction):
     """Send an HTTP request with optional template-rendered body."""
@@ -24,7 +26,18 @@ class HttpAction(BaseAction):
         if self.config.headers:
             headers = {k: render_template(v, tpl_ctx) for k, v in self.config.headers.items()}
 
-        await asyncio.to_thread(self._send_request, url, method, headers, body)
+        async def _attempt() -> None:
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(self._send_request, url, method, headers, body),
+                    timeout=_REQUEST_TIMEOUT,
+                )
+            except TimeoutError:
+                raise RuntimeError(
+                    f"HTTP {method} {url} timed out after {_REQUEST_TIMEOUT}s"
+                ) from None
+
+        await self._retry(_attempt)
 
     @staticmethod
     def _send_request(

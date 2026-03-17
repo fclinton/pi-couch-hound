@@ -10,13 +10,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Receive, Scope, Send
 
 from couch_hound.api.websocket import ConnectionManager
-from couch_hound.config import CONFIG_PATH, load_config
+from couch_hound.config import CONFIG_PATH, AppConfig, load_config
 from couch_hound.database import EventDatabase
 from couch_hound.pipeline import DetectionPipeline
 from couch_hound.updater import UpdateManager
@@ -28,7 +28,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown."""
     # Startup: load config and store in app state
-    config = load_config()
+    try:
+        config = load_config()
+    except Exception:
+        logger.exception("Config load failed, starting with defaults")
+        config = AppConfig()
     app.state.config = config
     app.state.config_path = CONFIG_PATH
 
@@ -37,14 +41,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ws_manager = ws_manager
 
     # Initialize event database
-    event_db = EventDatabase()
-    await event_db.init()
+    event_db: EventDatabase | None = None
+    try:
+        event_db = EventDatabase()
+        await event_db.init()
+    except Exception:
+        logger.exception("Event database initialization failed, events will be unavailable")
+        event_db = None
     app.state.event_db = event_db
 
     # Start detection pipeline with WebSocket broadcasting and event logging
     pipeline = DetectionPipeline(config)
     pipeline.set_connection_manager(ws_manager)
-    pipeline.set_event_db(event_db)
+    if event_db is not None:
+        pipeline.set_event_db(event_db)
     app.state.pipeline = pipeline
     await pipeline.start()
 
@@ -75,7 +85,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
     await pipeline.stop()
-    await event_db.close()
+    if event_db is not None:
+        await event_db.close()
 
 
 def create_app() -> FastAPI:
@@ -86,6 +97,11 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    @app.exception_handler(Exception)
+    async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     # Register API routes
     from couch_hound.api.routes_actions import router as actions_router
