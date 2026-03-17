@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -234,3 +235,43 @@ def test_get_stats_empty(empty_events_client: TestClient) -> None:
     assert data["avg_confidence"] == 0.0
     assert data["peak_hour"] is None
     assert data["confidence_distribution"] == {}
+
+
+# ── Database unavailable ──
+
+
+def test_events_503_when_db_unavailable() -> None:
+    """Routes return 503 when event database is None."""
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.event_db = None
+        response = client.get("/api/events")
+        assert response.status_code == 503
+        assert "unavailable" in response.json()["detail"]
+
+
+# ── Snapshot deletion resilience ──
+
+
+def test_delete_event_survives_snapshot_unlink_error(
+    events_client: TestClient, tmp_path: Path
+) -> None:
+    """Event deletion succeeds even when snapshot file cannot be removed."""
+    snapshot = tmp_path / "locked_snap.jpg"
+    snapshot.write_bytes(b"fake jpeg")
+
+    db: EventDatabase = events_client.app.state.event_db  # type: ignore[union-attr]
+    event_id = _run(
+        db.insert_event(
+            timestamp=datetime.now(tz=UTC).isoformat(),
+            confidence=0.88,
+            label="dog",
+            bbox=[0.0, 0.0, 1.0, 1.0],
+            snapshot_path=str(snapshot),
+            actions_fired=[],
+        )
+    )
+
+    with patch.object(Path, "unlink", side_effect=PermissionError("read-only")):
+        response = events_client.delete(f"/api/events/{event_id}")
+        assert response.status_code == 204

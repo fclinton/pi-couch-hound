@@ -67,3 +67,40 @@ class TestCamera:
         config = CameraConfig()
         camera = Camera(config)
         assert camera.grab_frame() is None
+
+    def test_consecutive_failures_raises(self) -> None:
+        """Camera raises RuntimeError after too many consecutive failures."""
+        config = CameraConfig()
+        camera = Camera(config)
+
+        mock_cap = MagicMock()
+        mock_cap.read.return_value = (False, None)
+        camera._cap = mock_cap
+
+        # Should return None for failures below the threshold
+        for _ in range(Camera._MAX_CONSECUTIVE_FAILURES - 1):
+            assert camera.grab_frame() is None
+
+        # The next failure should raise
+        with pytest.raises(RuntimeError, match="consecutive empty frames"):
+            camera.grab_frame()
+
+    def test_consecutive_failures_resets_on_success(self) -> None:
+        """Failure counter resets when a frame is successfully captured."""
+        config = CameraConfig()
+        camera = Camera(config)
+        frame_data = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        mock_cap = MagicMock()
+        camera._cap = mock_cap
+
+        # Accumulate some failures
+        mock_cap.read.return_value = (False, None)
+        for _ in range(10):
+            camera.grab_frame()
+        assert camera._consecutive_failures == 10
+
+        # One success should reset the counter
+        mock_cap.read.return_value = (True, frame_data)
+        camera.grab_frame()
+        assert camera._consecutive_failures == 0

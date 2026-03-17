@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -14,6 +15,8 @@ from couch_hound.api.schemas import (
     SoundListResponse,
     SoundUploadResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["uploads"])
 
@@ -60,7 +63,11 @@ async def upload_sound(file: UploadFile) -> SoundUploadResponse:
 
     SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
     dest = SOUNDS_DIR / filename
-    dest.write_bytes(content)
+    try:
+        dest.write_bytes(content)
+    except OSError as exc:
+        logger.exception("Failed to save sound file %s", dest)
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
 
     return SoundUploadResponse(filename=filename, path=str(dest), size=len(content))
 
@@ -97,8 +104,12 @@ async def upload_model(model: UploadFile, labels: UploadFile) -> ModelUploadResp
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     model_path = MODELS_DIR / model_name
     labels_path = MODELS_DIR / labels_name
-    model_path.write_bytes(model_content)
-    labels_path.write_bytes(labels_content)
+    try:
+        model_path.write_bytes(model_content)
+        labels_path.write_bytes(labels_content)
+    except OSError as exc:
+        logger.exception("Failed to save model files")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
 
     return ModelUploadResponse(model=str(model_path), labels=str(labels_path))
 

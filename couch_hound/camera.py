@@ -16,9 +16,12 @@ logger = logging.getLogger(__name__)
 class Camera:
     """Capture frames from a camera device or RTSP stream."""
 
+    _MAX_CONSECUTIVE_FAILURES = 50
+
     def __init__(self, config: CameraConfig) -> None:
         self._config = config
         self._cap: cv2.VideoCapture | None = None
+        self._consecutive_failures: int = 0
 
     def open(self) -> None:
         """Open the camera capture device."""
@@ -39,10 +42,20 @@ class Camera:
             self._cap = None
 
     def grab_frame(self) -> npt.NDArray[Any] | None:
-        """Capture a single frame, returning None on failure."""
+        """Capture a single frame, returning None on failure.
+
+        Raises RuntimeError after ``_MAX_CONSECUTIVE_FAILURES`` consecutive
+        failures so the pipeline can attempt camera re-initialisation.
+        """
         if self._cap is None:
             return None
         ret, frame = self._cap.read()
         if not ret:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._MAX_CONSECUTIVE_FAILURES:
+                raise RuntimeError(
+                    f"Camera returned {self._consecutive_failures} consecutive empty frames"
+                )
             return None
+        self._consecutive_failures = 0
         return frame
