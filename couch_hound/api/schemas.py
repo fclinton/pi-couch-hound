@@ -19,7 +19,11 @@ class StatusResponse(BaseModel):
     temperature: float | None
 
 
-class MonitoringToggleResponse(BaseModel):
+class MonitoringSetRequest(BaseModel):
+    enabled: bool
+
+
+class MonitoringSetResponse(BaseModel):
     enabled: bool
 
 

@@ -10,11 +10,15 @@ export function useSystemStatus() {
   });
 }
 
-export function useToggleMonitoring() {
+export function useSetMonitoring() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      apiFetch<{ enabled: boolean }>("/monitoring/toggle", { method: "POST" }),
+    mutationFn: (enabled: boolean) =>
+      apiFetch<{ enabled: boolean }>("/monitoring", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["system", "status"] });
       queryClient.invalidateQueries({ queryKey: ["config"] });

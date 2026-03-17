@@ -167,11 +167,11 @@ def test_restart_pipeline(client: TestClient) -> None:
     mock_pipeline.restart.assert_awaited_once()
 
 
-# ── POST /api/monitoring/toggle ──
+# ── PUT /api/monitoring ──
 
 
-def test_toggle_monitoring(tmp_path: Path) -> None:
-    """POST /api/monitoring/toggle should toggle and return new state."""
+def test_set_monitoring(tmp_path: Path) -> None:
+    """PUT /api/monitoring should set explicit state and return it."""
     app = create_app()
     with TestClient(app) as client:
         app.state.config_path = tmp_path / "config.yaml"
@@ -181,15 +181,22 @@ def test_toggle_monitoring(tmp_path: Path) -> None:
         mock_pipeline.monitoring_enabled = True
         app.state.pipeline = mock_pipeline
 
-        response = client.post("/api/monitoring/toggle")
+        response = client.put("/api/monitoring", json={"enabled": False})
         assert response.status_code == 200
         data = response.json()
         assert data["enabled"] is False
         mock_pipeline.set_monitoring_enabled.assert_called_once_with(False)
 
+        # Setting to True explicitly
+        mock_pipeline.reset_mock()
+        response = client.put("/api/monitoring", json={"enabled": True})
+        assert response.status_code == 200
+        assert response.json()["enabled"] is True
+        mock_pipeline.set_monitoring_enabled.assert_called_once_with(True)
 
-def test_toggle_monitoring_persists(tmp_path: Path) -> None:
-    """POST /api/monitoring/toggle should persist state to config file."""
+
+def test_set_monitoring_persists(tmp_path: Path) -> None:
+    """PUT /api/monitoring should persist state to config file."""
     app = create_app()
     config_path = tmp_path / "config.yaml"
     with TestClient(app) as client:
@@ -200,6 +207,6 @@ def test_toggle_monitoring_persists(tmp_path: Path) -> None:
         mock_pipeline.monitoring_enabled = True
         app.state.pipeline = mock_pipeline
 
-        client.post("/api/monitoring/toggle")
+        client.put("/api/monitoring", json={"enabled": False})
         assert config_path.exists()
         assert app.state.config.monitoring.enabled is False

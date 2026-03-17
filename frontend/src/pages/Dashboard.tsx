@@ -1,4 +1,4 @@
-import { useSystemStatus, useToggleMonitoring } from "@/api/system";
+import { useSystemStatus, useSetMonitoring } from "@/api/system";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import VideoFeed from "@/components/live/VideoFeed";
 import EventsTicker from "@/components/dashboard/EventsTicker";
@@ -16,7 +16,7 @@ interface WsStatus {
 export default function Dashboard() {
   const { data: status, isLoading } = useSystemStatus();
   const { lastMessage: wsStatusMsg, connected: wsConnected } = useWebSocket("/ws/status");
-  const toggleMonitoring = useToggleMonitoring();
+  const setMonitoring = useSetMonitoring();
 
   const wsStatus: WsStatus | null = wsStatusMsg
     ? (JSON.parse(wsStatusMsg.data as string) as WsStatus)
@@ -51,8 +51,8 @@ export default function Dashboard() {
           type="button"
           role="switch"
           aria-checked={monitoringEnabled}
-          disabled={toggleMonitoring.isPending}
-          onClick={() => toggleMonitoring.mutate()}
+          disabled={setMonitoring.isPending}
+          onClick={() => setMonitoring.mutate(!monitoringEnabled)}
           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
             monitoringEnabled ? "bg-brand-500" : "bg-gray-300"
           }`}
