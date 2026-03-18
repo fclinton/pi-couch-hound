@@ -55,11 +55,14 @@ class CooldownConfig(BaseModel):
 
 class ActionConfig(BaseModel):
     name: str
-    type: Literal["sound", "snapshot", "http", "mqtt", "script", "gpio"]
+    type: Literal["sound", "snapshot", "http", "mqtt", "script", "gpio", "chromecast"]
     enabled: bool = True
     # Sound
     sound_file: str | None = None
     volume: int | None = Field(default=None, ge=0, le=100)
+    # Chromecast
+    device_name: str | None = None
+    media_url: str | None = None
     # Snapshot
     save_dir: str | None = None
     max_kept: int | None = None
@@ -130,6 +133,7 @@ class SslConfig(BaseModel):
 class WebConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8080
+    media_port: int = 8081
     auth: AuthConfig = Field(default_factory=AuthConfig)
     ssl: SslConfig = Field(default_factory=SslConfig)
 

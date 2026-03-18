@@ -16,6 +16,7 @@ const ACTION_TYPES: { value: ActionType; label: string }[] = [
   { value: "mqtt", label: "MQTT" },
   { value: "script", label: "Script" },
   { value: "gpio", label: "GPIO" },
+  { value: "chromecast", label: "Chromecast" },
 ];
 
 function newAction(type: ActionType): ActionConfig {
@@ -29,6 +30,7 @@ const TYPE_COLORS: Record<ActionType, string> = {
   mqtt: "bg-yellow-100 text-yellow-800",
   script: "bg-gray-100 text-gray-700",
   gpio: "bg-red-100 text-red-700",
+  chromecast: "bg-orange-100 text-orange-700",
 };
 
 function ActionFields({
@@ -203,6 +205,37 @@ function ActionFields({
             step={0.1}
           />
         </div>
+      )}
+
+      {action.type === "chromecast" && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <TextInput
+              label="Device name"
+              value={action.device_name ?? ""}
+              onChange={(v) => set("device_name", v || null)}
+            />
+            <NumberInput
+              label="Volume (0–100)"
+              value={action.volume ?? 80}
+              onChange={(v) => set("volume", v)}
+              min={0}
+              max={100}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <TextInput
+              label="Sound file"
+              value={action.sound_file ?? ""}
+              onChange={(v) => set("sound_file", v || null)}
+            />
+            <TextInput
+              label="Media URL"
+              value={action.media_url ?? ""}
+              onChange={(v) => set("media_url", v || null)}
+            />
+          </div>
+        </>
       )}
     </div>
   );
