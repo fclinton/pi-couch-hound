@@ -4,6 +4,7 @@ import type { ActionConfig, ActionType, AppConfig } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { TextInput, NumberInput, SelectInput, Toggle, SaveBar } from "./FormFields";
 import { ChromecastDeviceSelect } from "./ChromecastDeviceSelect";
+import { SoundFileSelect } from "./SoundFileSelect";
 import { TemplateTextarea } from "./TemplateTextarea";
 
 const REQUIRED_FIELDS: Record<ActionType, { field: keyof ActionConfig; label: string }[]> = {
@@ -89,7 +90,7 @@ function ActionFields({
 
       {action.type === "sound" && (
         <div className="grid grid-cols-2 gap-4">
-          <TextInput
+          <SoundFileSelect
             label="Sound file"
             value={action.sound_file ?? ""}
             onChange={(v) => set("sound_file", v || null)}
@@ -256,7 +257,7 @@ function ActionFields({
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <TextInput
+            <SoundFileSelect
               label="Sound file"
               value={action.sound_file ?? ""}
               onChange={(v) => set("sound_file", v || null)}
