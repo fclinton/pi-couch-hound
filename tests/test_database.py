@@ -71,6 +71,36 @@ async def test_insert_with_snapshot_path(db: EventDatabase) -> None:
     assert event["actions_fired"] == ["save_snap", "notify"]
 
 
+async def test_insert_and_get_with_detections(db: EventDatabase) -> None:
+    detections = [
+        {"label": "dog", "confidence": 0.92, "bbox": [0.1, 0.2, 0.5, 0.6], "is_target": True},
+        {"label": "couch", "confidence": 0.80, "bbox": [0.0, 0.0, 0.9, 0.9], "is_target": False},
+    ]
+    event_id = await db.insert_event(
+        timestamp=datetime.now(tz=UTC).isoformat(),
+        confidence=0.92,
+        label="dog",
+        bbox=[0.1, 0.2, 0.5, 0.6],
+        snapshot_path=None,
+        actions_fired=["snapshot"],
+        detections=detections,
+    )
+    event = await db.get_event(event_id)
+    assert event is not None
+    assert event["detections"] == detections
+    assert len(event["detections"]) == 2
+    assert event["detections"][0]["is_target"] is True
+    assert event["detections"][1]["label"] == "couch"
+
+
+async def test_old_events_without_detections(db: EventDatabase) -> None:
+    """Events inserted without detections should return detections=None."""
+    event_id = await _insert_sample(db)
+    event = await db.get_event(event_id)
+    assert event is not None
+    assert event["detections"] is None
+
+
 # ── list events ──
 
 

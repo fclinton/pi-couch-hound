@@ -5,6 +5,13 @@ export interface SystemStatus {
   monitoring_enabled: boolean;
 }
 
+export interface DetectionDetail {
+  label: string;
+  confidence: number;
+  bbox: number[];
+  is_target: boolean;
+}
+
 export interface DetectionEvent {
   id: number;
   timestamp: string;
@@ -13,6 +20,7 @@ export interface DetectionEvent {
   bbox: number[];
   snapshot_path: string | null;
   actions_fired: string[];
+  detections: DetectionDetail[] | null;
 }
 
 export interface EventListResponse {

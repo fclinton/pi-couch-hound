@@ -28,6 +28,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _serialize_detections(detections: list[Detection]) -> list[dict[str, object]]:
+    """Convert Detection dataclass instances to plain dicts for JSON storage."""
+    return [
+        {
+            "label": d.label,
+            "confidence": d.confidence,
+            "bbox": d.bbox,
+            "is_target": d.is_target,
+        }
+        for d in detections
+    ]
+
+
 # Stream loop target: ~15 FPS when clients are connected
 _STREAM_INTERVAL = 1.0 / 15
 
@@ -404,13 +418,15 @@ class DetectionPipeline:
                 for level_idx in levels_to_fire:
                     if level_idx < len(self._config.escalation.levels):
                         fired_actions.extend(self._config.escalation.levels[level_idx].actions)
+                snapshot_path = context.get("snapshot_path")
                 await self._event_db.insert_event(
                     timestamp=timestamp,
                     confidence=best.confidence,
                     label=best.label,
                     bbox=best.bbox,
-                    snapshot_path=None,
+                    snapshot_path=str(snapshot_path) if snapshot_path else None,
                     actions_fired=fired_actions,
+                    detections=_serialize_detections(self._last_detections),
                 )
             except Exception:
                 logger.exception("Failed to persist detection event to database")
@@ -482,6 +498,7 @@ class DetectionPipeline:
                     bbox=detection.bbox,
                     snapshot_path=str(snapshot_path) if snapshot_path else None,
                     actions_fired=action_names,
+                    detections=_serialize_detections(self._last_detections),
                 )
             except Exception:
                 logger.exception("Failed to persist detection event to database")

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEvent, useDeleteEvent } from "@/api/events";
 
@@ -7,6 +8,7 @@ export default function EventDetail() {
   const eventId = id ? Number(id) : null;
   const { data: event, isLoading, isError } = useEvent(eventId);
   const deleteMutation = useDeleteEvent();
+  const [showDetections, setShowDetections] = useState(true);
 
   if (isLoading) {
     return (
@@ -71,9 +73,17 @@ export default function EventDetail() {
         {/* Snapshot with bounding box overlay */}
         <div className="lg:col-span-2">
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700">
-              Snapshot
-            </h2>
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-700">Snapshot</h2>
+              {snapshotUrl && (
+                <button
+                  onClick={() => setShowDetections((v) => !v)}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  {showDetections ? "Hide Detections" : "Show Detections"}
+                </button>
+              )}
+            </div>
             {snapshotUrl ? (
               <div className="relative">
                 <img
@@ -81,21 +91,48 @@ export default function EventDetail() {
                   alt={`Detection event ${event.id}`}
                   className="block w-full"
                 />
-                {/* Bounding box overlay */}
-                <div
-                  data-testid="bbox-overlay"
-                  className="pointer-events-none absolute border-2 border-red-500"
-                  style={{
-                    left: `${bx1 * 100}%`,
-                    top: `${by1 * 100}%`,
-                    width: `${(bx2 - bx1) * 100}%`,
-                    height: `${(by2 - by1) * 100}%`,
-                  }}
-                >
-                  <span className="absolute -top-5 left-0 rounded bg-red-500 px-1 text-xs font-medium text-white">
-                    {event.label} {(event.confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
+                {/* Detection region overlays */}
+                {showDetections && (event.detections ? (
+                  event.detections.map((det, idx) => {
+                    const [x1, y1, x2, y2] = det.bbox;
+                    const isTarget = det.is_target;
+                    return (
+                      <div
+                        key={idx}
+                        data-testid={`bbox-overlay-${idx}`}
+                        className={`pointer-events-none absolute border-2 ${isTarget ? "border-red-500" : "border-gray-400"}`}
+                        style={{
+                          left: `${x1 * 100}%`,
+                          top: `${y1 * 100}%`,
+                          width: `${(x2 - x1) * 100}%`,
+                          height: `${(y2 - y1) * 100}%`,
+                        }}
+                      >
+                        <span
+                          className={`absolute -top-5 left-0 rounded px-1 text-xs font-medium text-white ${isTarget ? "bg-red-500" : "bg-gray-400"}`}
+                        >
+                          {det.label} {(det.confidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  /* Fallback: single bbox for old events without detections */
+                  <div
+                    data-testid="bbox-overlay"
+                    className="pointer-events-none absolute border-2 border-red-500"
+                    style={{
+                      left: `${bx1 * 100}%`,
+                      top: `${by1 * 100}%`,
+                      width: `${(bx2 - bx1) * 100}%`,
+                      height: `${(by2 - by1) * 100}%`,
+                    }}
+                  >
+                    <span className="absolute -top-5 left-0 rounded bg-red-500 px-1 text-xs font-medium text-white">
+                      {event.label} {(event.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="flex items-center justify-center py-24 text-sm text-gray-400">

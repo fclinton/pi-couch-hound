@@ -27,6 +27,13 @@ class MonitoringSetResponse(BaseModel):
     enabled: bool
 
 
+class DetectionDetail(BaseModel):
+    label: str
+    confidence: float
+    bbox: list[float]
+    is_target: bool
+
+
 class EventResponse(BaseModel):
     id: int
     timestamp: str
@@ -35,6 +42,7 @@ class EventResponse(BaseModel):
     bbox: list[float]
     snapshot_path: str | None = None
     actions_fired: list[str]
+    detections: list[DetectionDetail] | None = None
 
 
 class EventListResponse(BaseModel):

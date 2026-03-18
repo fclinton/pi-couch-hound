@@ -61,6 +61,20 @@ def events_client(tmp_path: Path) -> Generator[TestClient, None, None]:
                 bbox=[0.3, 0.4, 0.6, 0.7],
                 snapshot_path=None,
                 actions_fired=["notify"],
+                detections=[
+                    {
+                        "label": "dog",
+                        "confidence": 0.92,
+                        "bbox": [0.3, 0.4, 0.6, 0.7],
+                        "is_target": True,
+                    },
+                    {
+                        "label": "couch",
+                        "confidence": 0.85,
+                        "bbox": [0.0, 0.1, 0.9, 0.9],
+                        "is_target": False,
+                    },
+                ],
             )
         )
 
@@ -144,6 +158,26 @@ def test_get_event_by_id(events_client: TestClient) -> None:
     assert data["label"] == "dog"
     assert data["bbox"] == [0.1, 0.2, 0.3, 0.4]
     assert data["actions_fired"] == ["bark_alarm"]
+
+
+def test_get_event_with_detections(events_client: TestClient) -> None:
+    response = events_client.get("/api/events/3")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["detections"] is not None
+    assert len(data["detections"]) == 2
+    assert data["detections"][0]["label"] == "dog"
+    assert data["detections"][0]["is_target"] is True
+    assert data["detections"][1]["label"] == "couch"
+    assert data["detections"][1]["is_target"] is False
+
+
+def test_get_event_without_detections(events_client: TestClient) -> None:
+    """Old events without detections should return detections=null."""
+    response = events_client.get("/api/events/1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["detections"] is None
 
 
 def test_get_event_not_found(events_client: TestClient) -> None:

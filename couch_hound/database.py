@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS events (
     bbox          TEXT    NOT NULL,
     snapshot_path TEXT,
     actions_fired TEXT    NOT NULL,
+    detections    TEXT,
     created_at    TEXT    DEFAULT (datetime('now'))
 );
 """
@@ -43,6 +44,11 @@ class EventDatabase:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(_CREATE_TABLE)
         await self._db.execute(_CREATE_INDEX)
+        # Migrate: add detections column for pre-existing databases
+        try:
+            await self._db.execute("ALTER TABLE events ADD COLUMN detections TEXT")
+        except Exception:  # noqa: BLE001
+            pass  # Column already exists
         await self._db.commit()
         logger.info("Event database initialized at %s", self._path)
 
@@ -54,6 +60,7 @@ class EventDatabase:
 
     def _deserialize_row(self, row: aiosqlite.Row) -> dict[str, object]:
         """Convert a database row to a dict with deserialized JSON fields."""
+        raw_detections = row["detections"]
         return {
             "id": row["id"],
             "timestamp": row["timestamp"],
@@ -62,6 +69,7 @@ class EventDatabase:
             "bbox": json.loads(row["bbox"]),
             "snapshot_path": row["snapshot_path"],
             "actions_fired": json.loads(row["actions_fired"]),
+            "detections": json.loads(raw_detections) if raw_detections else None,
         }
 
     async def insert_event(
@@ -72,12 +80,14 @@ class EventDatabase:
         bbox: list[float],
         snapshot_path: str | None,
         actions_fired: list[str],
+        detections: list[dict[str, object]] | None = None,
     ) -> int:
         """Insert a detection event and return its id."""
         assert self._db is not None
         cursor = await self._db.execute(
-            "INSERT INTO events (timestamp, confidence, label, bbox, snapshot_path, actions_fired)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO events"
+            " (timestamp, confidence, label, bbox, snapshot_path, actions_fired, detections)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 timestamp,
                 confidence,
@@ -85,6 +95,7 @@ class EventDatabase:
                 json.dumps(bbox),
                 snapshot_path,
                 json.dumps(actions_fired),
+                json.dumps(detections) if detections is not None else None,
             ),
         )
         await self._db.commit()
