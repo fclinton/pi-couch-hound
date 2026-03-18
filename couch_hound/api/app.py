@@ -108,6 +108,7 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_auth import router as auth_router
     from couch_hound.api.routes_config import router as config_router
     from couch_hound.api.routes_events import router as events_router
+    from couch_hound.api.routes_logs import router as logs_router
     from couch_hound.api.routes_roi import router as roi_router
     from couch_hound.api.routes_snapshots import router as snapshots_router
     from couch_hound.api.routes_system import router as system_router
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(update_router, prefix="/api")
     app.include_router(upload_router, prefix="/api")
     app.include_router(events_router, prefix="/api")
+    app.include_router(logs_router, prefix="/api")
     app.include_router(roi_router, prefix="/api")
     app.include_router(snapshots_router, prefix="/api")
     app.include_router(ws_router)
