@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pi-couch-hound"
 description = "Raspberry Pi-powered dog detector for catching couch potato pups"
 dynamic = ["version"]
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 license = { text = "AGPL-3.0" }
 dependencies = [
     "fastapi>=0.104.0",
