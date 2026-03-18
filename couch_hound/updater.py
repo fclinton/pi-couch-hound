@@ -1,17 +1,25 @@
-"""Automatic update manager — checks GitHub for updates and applies them."""
+"""Automatic update manager — checks GitHub Releases for updates and applies them."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-import re
+import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+import tarfile
+import tempfile
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, time
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
+
+from packaging.version import InvalidVersion, Version
 
 from couch_hound.config import UpdateConfig
 
@@ -29,31 +37,34 @@ class UpdateState(StrEnum):
 @dataclass
 class UpdateInfo:
     state: UpdateState = UpdateState.UP_TO_DATE
-    current_commit: str = ""
-    remote_commit: str | None = None
     current_version: str = ""
     available_version: str | None = None
+    release_url: str | None = None
+    release_notes: str | None = None
     last_check_time: str | None = None
     last_error: str | None = None
-    commits_behind: int = 0
-    commit_messages: list[str] = field(default_factory=list)
     requires_python: str | None = None
     python_compatible: bool = True
 
 
-class UpdateManager:
-    """Manages checking for and applying updates from the Git remote."""
+# Directories/files to preserve when overlaying an update
+_PRESERVE = {"config.yaml", "data", "logs", "snapshots", "models", ".venv"}
 
-    def __init__(self, config: UpdateConfig, repo_dir: Path | None = None) -> None:
+
+class UpdateManager:
+    """Manages checking for and applying updates from GitHub Releases."""
+
+    def __init__(self, config: UpdateConfig, install_dir: Path | None = None) -> None:
         self._config = config
-        self._repo_dir = repo_dir or Path.cwd()
+        self._install_dir = install_dir or Path.cwd()
         self._info = UpdateInfo()
-        self._default_branch: str | None = None
         self._task: asyncio.Task[None] | None = None
 
-        from couch_hound import __version__
+        from couch_hound import __repo__, __version__
 
         self._info.current_version = __version__
+        self._repo = __repo__
+        self._api_url = f"https://api.github.com/repos/{self._repo}/releases/latest"
 
     def get_info(self) -> UpdateInfo:
         """Return a snapshot of the current update state."""
@@ -72,93 +83,74 @@ class UpdateManager:
         return self._task
 
     async def check_for_updates(self) -> UpdateInfo:
-        """Check the remote for new commits."""
+        """Check GitHub Releases for a newer version."""
         self._info.state = UpdateState.CHECKING
         self._info.last_error = None
         try:
-            await self._run_git("fetch", "origin")
+            data = await self._fetch_latest_release()
 
-            branch = await self._get_default_branch()
-            local = (await self._run_git("rev-parse", "HEAD")).strip()
-            remote = (await self._run_git("rev-parse", f"origin/{branch}")).strip()
+            tag = data.get("tag_name", "")
+            remote_version_str = tag.lstrip("v")
 
-            self._info.current_commit = local[:8]
+            try:
+                remote_version = Version(remote_version_str)
+                current_version = Version(self._info.current_version)
+            except InvalidVersion as exc:
+                self._info.state = UpdateState.ERROR
+                self._info.last_error = f"Invalid version format: {exc}"
+                self._info.last_check_time = datetime.now().isoformat()
+                return self._info
 
-            if local == remote:
+            if remote_version <= current_version:
                 self._info.state = UpdateState.UP_TO_DATE
-                self._info.remote_commit = None
                 self._info.available_version = None
-                self._info.commits_behind = 0
-                self._info.commit_messages = []
+                self._info.release_url = None
+                self._info.release_notes = None
                 self._info.requires_python = None
                 self._info.python_compatible = True
             else:
                 self._info.state = UpdateState.AVAILABLE
-                self._info.remote_commit = remote[:8]
-                count_str = (
-                    await self._run_git("rev-list", "--count", f"HEAD..origin/{branch}")
-                ).strip()
-                self._info.commits_behind = int(count_str)
+                self._info.available_version = remote_version_str
+                self._info.release_notes = data.get("body")
 
-                log_output = await self._run_git("log", "--oneline", f"HEAD..origin/{branch}")
-                self._info.commit_messages = [
-                    line.strip() for line in log_output.strip().splitlines() if line.strip()
-                ]
+                # Find the tarball asset
+                assets = data.get("assets", [])
+                tarball_url = None
+                for asset in assets:
+                    name = asset.get("name", "")
+                    if name.endswith(".tar.gz"):
+                        tarball_url = asset.get("browser_download_url")
+                        break
+                self._info.release_url = tarball_url
 
-                # Try to extract remote version
-                try:
-                    init_content = await self._run_git(
-                        "show", f"origin/{branch}:couch_hound/__init__.py"
-                    )
-                    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_content)
-                    self._info.available_version = match.group(1) if match else None
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                    self._info.available_version = None
-
-                # Check if remote requires a different Python version
-                try:
-                    toml_content = await self._run_git("show", f"origin/{branch}:pyproject.toml")
-                    rp_match = re.search(r'requires-python\s*=\s*"([^"]+)"', toml_content)
-                    if rp_match:
-                        self._info.requires_python = rp_match.group(1)
-                        from packaging.specifiers import InvalidSpecifier, SpecifierSet
-
-                        try:
-                            spec = SpecifierSet(rp_match.group(1))
-                            current_py = (
-                                f"{sys.version_info.major}"
-                                f".{sys.version_info.minor}"
-                                f".{sys.version_info.micro}"
-                            )
-                            self._info.python_compatible = current_py in spec
-                        except InvalidSpecifier:
-                            self._info.python_compatible = True
-                    else:
-                        self._info.requires_python = None
-                        self._info.python_compatible = True
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                    self._info.requires_python = None
-                    self._info.python_compatible = True
+                # Check Python compatibility from release body
+                self._info.requires_python = None
+                self._info.python_compatible = True
 
             self._info.last_check_time = datetime.now().isoformat()
 
-        except FileNotFoundError:
+        except urllib.error.HTTPError as exc:
             self._info.state = UpdateState.ERROR
-            self._info.last_error = "git is not installed"
-            logger.error("git executable not found")
-        except subprocess.CalledProcessError as exc:
-            self._info.state = UpdateState.ERROR
-            self._info.last_error = f"git command failed: {exc.stderr or exc.stdout or str(exc)}"
+            if exc.code == 404:
+                self._info.last_error = "No releases found"
+            elif exc.code in (403, 429):
+                self._info.last_error = "GitHub API rate limit exceeded"
+            else:
+                self._info.last_error = f"GitHub API error: HTTP {exc.code}"
             logger.error("Update check failed: %s", self._info.last_error)
-        except subprocess.TimeoutExpired:
+        except urllib.error.URLError as exc:
             self._info.state = UpdateState.ERROR
-            self._info.last_error = "git command timed out"
-            logger.error("Update check timed out")
+            self._info.last_error = f"Network error: {exc.reason}"
+            logger.error("Update check failed: %s", self._info.last_error)
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            self._info.state = UpdateState.ERROR
+            self._info.last_error = f"Failed to parse release data: {exc}"
+            logger.error("Update check failed: %s", self._info.last_error)
 
         return self._info
 
     async def apply_update(self) -> UpdateInfo:
-        """Pull latest code, reinstall, rebuild frontend if needed, then restart."""
+        """Download and apply the latest release, then restart."""
         if not self._info.python_compatible:
             self._info.state = UpdateState.ERROR
             self._info.last_error = (
@@ -169,26 +161,34 @@ class UpdateManager:
             )
             return self._info
 
+        if not self._info.release_url:
+            self._info.state = UpdateState.ERROR
+            self._info.last_error = "No release tarball URL available"
+            return self._info
+
         self._info.state = UpdateState.APPLYING
         self._info.last_error = None
-        stashed = False
 
         try:
-            branch = await self._get_default_branch()
+            # Download tarball to temp file
+            tarball_path = await self._download_release(self._info.release_url)
 
-            # Stash local changes
-            stash_out = await self._run_git("stash", "--include-untracked")
-            stashed = "No local changes" not in stash_out
-
-            # Pull with fast-forward only
-            await self._run_git("pull", "origin", branch, "--ff-only")
+            try:
+                # Extract and overlay
+                await self._extract_and_overlay(tarball_path)
+            finally:
+                # Clean up downloaded tarball
+                try:
+                    os.unlink(tarball_path)
+                except OSError:
+                    pass
 
             # Reinstall Python package
             venv_python = sys.executable
             await asyncio.to_thread(
                 subprocess.run,
                 [venv_python, "-m", "pip", "install", "--quiet", "."],
-                cwd=str(self._repo_dir),
+                cwd=str(self._install_dir),
                 capture_output=True,
                 text=True,
                 timeout=300,
@@ -200,52 +200,9 @@ class UpdateManager:
             try:
                 from couch_hound.config import migrate_config
 
-                migrate_config(self._repo_dir)
+                migrate_config(self._install_dir)
             except Exception as exc:
                 logger.warning("Config migration failed (continuing): %s", exc)
-
-            # Check if frontend changed
-            try:
-                diff_output = await self._run_git(
-                    "diff",
-                    "--name-only",
-                    f"HEAD~{self._info.commits_behind}..HEAD",
-                    "--",
-                    "frontend/",
-                )
-                if diff_output.strip():
-                    logger.info("Frontend files changed, rebuilding...")
-                    frontend_dir = self._repo_dir / "frontend"
-                    await asyncio.to_thread(
-                        subprocess.run,
-                        ["npm", "ci", "--silent"],
-                        cwd=str(frontend_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                        check=True,
-                    )
-                    await asyncio.to_thread(
-                        subprocess.run,
-                        ["npm", "run", "build", "--silent"],
-                        cwd=str(frontend_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                        check=True,
-                    )
-                    logger.info("Frontend rebuilt")
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                logger.warning("Frontend rebuild failed (continuing): %s", exc)
-
-            # Pop stash if we stashed
-            if stashed:
-                try:
-                    await self._run_git("stash", "pop")
-                except subprocess.CalledProcessError:
-                    logger.warning(
-                        "git stash pop had conflicts — local changes may need manual merge"
-                    )
 
             logger.info("Update applied successfully, scheduling restart...")
 
@@ -260,22 +217,87 @@ class UpdateManager:
             stderr = exc.stderr or exc.stdout or str(exc)
             self._info.last_error = f"Update failed: {stderr}"
             logger.error("Update apply failed: %s", self._info.last_error)
-            if stashed:
-                try:
-                    await self._run_git("stash", "pop")
-                except subprocess.CalledProcessError:
-                    logger.warning("Failed to pop stash after error")
             return self._info
         except subprocess.TimeoutExpired:
             self._info.state = UpdateState.ERROR
             self._info.last_error = "Update command timed out"
             logger.error("Update apply timed out")
-            if stashed:
-                try:
-                    await self._run_git("stash", "pop")
-                except subprocess.CalledProcessError:
-                    logger.warning("Failed to pop stash after timeout")
             return self._info
+        except (OSError, tarfile.TarError) as exc:
+            self._info.state = UpdateState.ERROR
+            self._info.last_error = f"Update failed: {exc}"
+            logger.error("Update apply failed: %s", exc)
+            return self._info
+
+    async def _fetch_latest_release(self) -> dict[str, Any]:
+        """Fetch the latest release metadata from GitHub API."""
+        request = urllib.request.Request(
+            self._api_url,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "pi-couch-hound"},
+        )
+
+        def _do_fetch() -> dict[str, Any]:
+            with urllib.request.urlopen(request, timeout=30) as resp:
+                return json.loads(resp.read().decode())  # type: ignore[no-any-return]
+
+        return await asyncio.to_thread(_do_fetch)
+
+    async def _download_release(self, url: str) -> str:
+        """Download a release tarball to a temp file, return its path."""
+
+        def _do_download() -> str:
+            fd, path = tempfile.mkstemp(suffix=".tar.gz")
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": "pi-couch-hound"})
+                with urllib.request.urlopen(request, timeout=300) as resp:
+                    with os.fdopen(fd, "wb") as f:
+                        shutil.copyfileobj(resp, f)
+                return path
+            except Exception:
+                os.close(fd) if not os.path.exists(path) else os.unlink(path)
+                raise
+
+        return await asyncio.to_thread(_do_download)
+
+    async def _extract_and_overlay(self, tarball_path: str) -> None:
+        """Extract a release tarball and overlay files onto the install directory."""
+
+        def _do_extract() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with tarfile.open(tarball_path, "r:gz") as tar:
+                    # Security: validate no path traversal in tar members
+                    for member in tar.getmembers():
+                        member_path = os.path.normpath(member.name)
+                        if member_path.startswith("..") or os.path.isabs(member_path):
+                            raise tarfile.TarError(
+                                f"Refusing to extract path with traversal: {member.name}"
+                            )
+                    tar.extractall(tmpdir)  # noqa: S202
+
+                # Find the extracted directory (e.g., pi-couch-hound-0.2.0/)
+                extracted = [d for d in Path(tmpdir).iterdir() if d.is_dir()]
+                if len(extracted) != 1:
+                    raise tarfile.TarError(
+                        f"Expected one top-level directory in tarball, found {len(extracted)}"
+                    )
+                src_dir = extracted[0]
+
+                # Overlay files, preserving user data
+                for item in src_dir.iterdir():
+                    if item.name in _PRESERVE:
+                        continue
+                    dest = self._install_dir / item.name
+                    if dest.exists():
+                        if dest.is_dir():
+                            shutil.rmtree(dest)
+                        else:
+                            dest.unlink()
+                    if item.is_dir():
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+
+        await asyncio.to_thread(_do_extract)
 
     async def _periodic_check_loop(self, stop_event: asyncio.Event) -> None:
         """Background loop that periodically checks for updates."""
@@ -319,30 +341,3 @@ class UpdateManager:
         else:
             # Window crosses midnight (e.g., 23:00-05:00)
             return now >= start or now <= end
-
-    async def _get_default_branch(self) -> str:
-        """Detect the default branch name from the remote."""
-        if self._default_branch:
-            return self._default_branch
-
-        try:
-            ref = await self._run_git("symbolic-ref", "refs/remotes/origin/HEAD")
-            # Output like "refs/remotes/origin/main"
-            self._default_branch = ref.strip().split("/")[-1]
-        except subprocess.CalledProcessError:
-            self._default_branch = "main"
-
-        return self._default_branch
-
-    async def _run_git(self, *args: str) -> str:
-        """Run a git command and return stdout."""
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["git", *args],
-            cwd=str(self._repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
-        )
-        return result.stdout

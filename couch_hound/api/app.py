@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Receive, Scope, Send
 
+from couch_hound import __version__
 from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, AppConfig, load_config
 from couch_hound.database import EventDatabase
@@ -128,7 +129,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Pi Couch Hound",
         description="Raspberry Pi-powered dog detector API",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 

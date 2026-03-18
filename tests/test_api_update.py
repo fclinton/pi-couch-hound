@@ -27,7 +27,7 @@ def test_get_update_status(update_client: TestClient) -> None:
     data = response.json()
     assert data["state"] == "up_to_date"
     assert "current_version" in data
-    assert "commits_behind" in data
+    assert "release_notes" in data
 
 
 def test_check_for_updates(update_client: TestClient) -> None:

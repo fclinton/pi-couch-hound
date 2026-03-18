@@ -165,14 +165,11 @@ export interface UpdateConfig {
 
 export interface UpdateStatus {
   state: "up_to_date" | "checking" | "available" | "applying" | "error";
-  current_commit: string;
-  remote_commit: string | null;
   current_version: string;
   available_version: string | null;
+  release_notes: string | null;
   last_check_time: string | null;
   last_error: string | null;
-  commits_behind: number;
-  commit_messages: string[];
 }
 
 export interface AutoDisableConfig {

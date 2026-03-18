@@ -22,14 +22,11 @@ def _to_response(manager: UpdateManager) -> UpdateStatusResponse:
     info = manager.get_info()
     return UpdateStatusResponse(
         state=info.state.value,
-        current_commit=info.current_commit,
-        remote_commit=info.remote_commit,
         current_version=info.current_version,
         available_version=info.available_version,
+        release_notes=info.release_notes,
         last_check_time=info.last_check_time,
         last_error=info.last_error,
-        commits_behind=info.commits_behind,
-        commit_messages=info.commit_messages,
         requires_python=info.requires_python,
         python_compatible=info.python_compatible,
     )
