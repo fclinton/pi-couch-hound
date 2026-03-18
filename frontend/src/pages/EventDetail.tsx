@@ -154,43 +154,67 @@ export default function EventDetail() {
               Training Data
             </h2>
             <div className="space-y-2 px-4 py-3">
-              <button
-                onClick={() =>
-                  addToTrainingMutation.mutate({
-                    eventId: event.id,
-                    is_positive: true,
-                  })
-                }
-                disabled={addToTrainingMutation.isPending}
-                className="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                {addToTrainingMutation.isPending
-                  ? "Adding..."
-                  : "Add as Positive (Dog)"}
-              </button>
-              <button
-                onClick={() =>
-                  addToTrainingMutation.mutate({
-                    eventId: event.id,
-                    is_positive: false,
-                  })
-                }
-                disabled={addToTrainingMutation.isPending}
-                className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {addToTrainingMutation.isPending
-                  ? "Adding..."
-                  : "Add as Negative (False Positive)"}
-              </button>
-              {addToTrainingMutation.isSuccess && (
-                <p className="text-center text-xs text-green-600">
-                  Added to training dataset
-                </p>
-              )}
-              {addToTrainingMutation.isError && (
-                <p className="text-center text-xs text-red-600">
-                  Failed to add sample
-                </p>
+              {event.training ? (
+                <div className="space-y-2">
+                  <div
+                    className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
+                      event.training.is_positive
+                        ? "bg-green-50 text-green-700"
+                        : "bg-red-50 text-red-700"
+                    }`}
+                  >
+                    <span className="text-base">
+                      {event.training.is_positive ? "+" : "-"}
+                    </span>
+                    Trained as{" "}
+                    {event.training.is_positive ? "positive" : "negative"} (
+                    {event.training.label})
+                  </div>
+                  <p className="text-center text-xs text-gray-500">
+                    Sample #{event.training.sample_id}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() =>
+                      addToTrainingMutation.mutate({
+                        eventId: event.id,
+                        is_positive: true,
+                      })
+                    }
+                    disabled={addToTrainingMutation.isPending}
+                    className="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {addToTrainingMutation.isPending
+                      ? "Adding..."
+                      : "Add as Positive (Dog)"}
+                  </button>
+                  <button
+                    onClick={() =>
+                      addToTrainingMutation.mutate({
+                        eventId: event.id,
+                        is_positive: false,
+                      })
+                    }
+                    disabled={addToTrainingMutation.isPending}
+                    className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {addToTrainingMutation.isPending
+                      ? "Adding..."
+                      : "Add as Negative (False Positive)"}
+                  </button>
+                  {addToTrainingMutation.isSuccess && (
+                    <p className="text-center text-xs text-green-600">
+                      Added to training dataset
+                    </p>
+                  )}
+                  {addToTrainingMutation.isError && (
+                    <p className="text-center text-xs text-red-600">
+                      Failed to add sample
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>

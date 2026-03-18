@@ -29,6 +29,11 @@ _CREATE_INDEX = """\
 CREATE INDEX IF NOT EXISTS idx_samples_label ON training_samples(label);
 """
 
+_CREATE_EVENT_UNIQUE_INDEX = """\
+CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_source_event_id
+ON training_samples(source_event_id) WHERE source_event_id IS NOT NULL;
+"""
+
 
 class TrainingDatabase:
     """Async SQLite database for training dataset management."""
@@ -44,8 +49,25 @@ class TrainingDatabase:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(_CREATE_SAMPLES_TABLE)
         await self._db.execute(_CREATE_INDEX)
+        await self._deduplicate_event_samples()
+        await self._db.execute(_CREATE_EVENT_UNIQUE_INDEX)
         await self._db.commit()
         logger.info("Training database initialized at %s", self._path)
+
+    async def _deduplicate_event_samples(self) -> None:
+        """Remove duplicate samples for the same source_event_id, keeping the newest."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "DELETE FROM training_samples WHERE id NOT IN ("
+            "  SELECT MAX(id) FROM training_samples"
+            "  WHERE source_event_id IS NOT NULL"
+            "  GROUP BY source_event_id"
+            ") AND source_event_id IS NOT NULL"
+        )
+        if cursor.rowcount:
+            logger.warning(
+                "Removed %d duplicate training samples during migration", cursor.rowcount
+            )
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -100,6 +122,34 @@ class TrainingDatabase:
         await self._db.commit()
         assert cursor.lastrowid is not None
         return cursor.lastrowid
+
+    async def get_sample_by_event_id(self, event_id: int) -> dict[str, object] | None:
+        """Fetch a training sample linked to a specific event, if any."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "SELECT * FROM training_samples WHERE source_event_id = ?", (event_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return self._deserialize_row(row)
+
+    async def get_samples_by_event_ids(self, event_ids: list[int]) -> dict[int, dict[str, object]]:
+        """Fetch training samples for multiple event IDs. Returns {event_id: sample}."""
+        if not event_ids:
+            return {}
+        assert self._db is not None
+        placeholders = ",".join("?" for _ in event_ids)
+        cursor = await self._db.execute(
+            f"SELECT * FROM training_samples WHERE source_event_id IN ({placeholders})",  # noqa: S608
+            event_ids,
+        )
+        rows = await cursor.fetchall()
+        return {
+            int(str(row["source_event_id"])): self._deserialize_row(row)
+            for row in rows
+            if row["source_event_id"] is not None
+        }
 
     async def get_sample(self, sample_id: int) -> dict[str, object] | None:
         """Fetch a single sample by id."""

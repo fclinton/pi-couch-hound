@@ -27,6 +27,12 @@ class MonitoringSetResponse(BaseModel):
     enabled: bool
 
 
+class EventTrainingInfo(BaseModel):
+    sample_id: int
+    label: str
+    is_positive: bool
+
+
 class EventResponse(BaseModel):
     id: int
     timestamp: str
@@ -35,6 +41,7 @@ class EventResponse(BaseModel):
     bbox: list[float]
     snapshot_path: str | None = None
     actions_fired: list[str]
+    training: EventTrainingInfo | None = None
 
 
 class EventListResponse(BaseModel):

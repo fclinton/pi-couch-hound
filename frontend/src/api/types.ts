@@ -5,6 +5,12 @@ export interface SystemStatus {
   monitoring_enabled: boolean;
 }
 
+export interface EventTrainingInfo {
+  sample_id: number;
+  label: string;
+  is_positive: boolean;
+}
+
 export interface DetectionEvent {
   id: number;
   timestamp: string;
@@ -13,6 +19,7 @@ export interface DetectionEvent {
   bbox: number[];
   snapshot_path: string | null;
   actions_fired: string[];
+  training: EventTrainingInfo | null;
 }
 
 export interface EventListResponse {
