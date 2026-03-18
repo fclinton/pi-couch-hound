@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
-import re
+import os
 import shutil
 import zipfile
 from pathlib import Path
@@ -14,6 +14,7 @@ import cv2
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
+from couch_hound.api.routes_snapshots import _sanitize_path
 from couch_hound.api.schemas import (
     TrainingSampleCreateRequest,
     TrainingSampleFromEventRequest,
@@ -34,20 +35,6 @@ _RESOLVED_TRAINING_DIR = TRAINING_IMAGES_DIR.resolve()
 
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-
-# Only allow simple filenames: alphanumerics, hyphens, underscores, dots.
-_SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-
-
-def _safe_resolve(filename: str, base_dir: Path) -> Path:
-    """Resolve a filename within base_dir, raising 400 if it escapes."""
-    safe = Path(filename).name
-    if not safe or not _SAFE_FILENAME_RE.match(safe):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    resolved = (base_dir / safe).resolve()
-    if not resolved.is_relative_to(base_dir.resolve()):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    return resolved
 
 
 def _get_training_db(request: Request) -> TrainingDatabase:
@@ -169,13 +156,14 @@ async def create_sample_from_event(
     if not snapshot_path:
         raise HTTPException(status_code=400, detail="Event has no snapshot image")
 
-    src = Path(str(snapshot_path)).resolve()
-    snapshots_dir = Path("snapshots").resolve()
-    if not src.is_relative_to(snapshots_dir) or not src.is_file():
+    snapshots_base = str(Path("snapshots").resolve())
+    src_resolved = os.path.normpath(os.path.realpath(str(snapshot_path)))
+    if not src_resolved.startswith(snapshots_base) or not os.path.isfile(src_resolved):
         raise HTTPException(status_code=400, detail="Event has no valid snapshot image")
 
-    dest = _safe_resolve(f"event_{event_id}_{src.name}", TRAINING_IMAGES_DIR)
-    shutil.copy2(str(src), str(dest))
+    src_name = os.path.basename(src_resolved)
+    dest = _sanitize_path(f"event_{event_id}_{src_name}", _RESOLVED_TRAINING_DIR)
+    shutil.copy2(src_resolved, dest)
 
     db = _get_training_db(request)
     sample_id = await db.insert_sample(
@@ -283,11 +271,11 @@ async def capture_sample(
 @router.get("/images/{filename}")
 async def get_training_image(filename: str) -> FileResponse:
     """Serve a training sample image."""
-    resolved = _safe_resolve(filename, TRAINING_IMAGES_DIR)
-    if not resolved.is_file():
+    safe_path = _sanitize_path(filename, _RESOLVED_TRAINING_DIR)
+    if not os.path.isfile(safe_path):
         raise HTTPException(status_code=404, detail="Image not found")
 
-    return FileResponse(path=str(resolved), media_type="image/jpeg")
+    return FileResponse(path=safe_path, media_type="image/jpeg")
 
 
 # ── Stats ──
