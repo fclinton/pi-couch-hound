@@ -75,6 +75,7 @@ class DetectionPipeline:
         self._event_db: EventDatabase | None = None
         self._last_detections: list[Detection] = []
         self._last_debug_info: SnakeDebugInfo | None = None
+        self._last_frame: npt.NDArray[Any] | None = None
 
     @property
     def state(self) -> PipelineState:
@@ -90,6 +91,11 @@ class DetectionPipeline:
     def fatal_error(self) -> asyncio.Event:
         """Set when the pipeline exhausts retries and cannot recover."""
         return self._fatal_error
+
+    @property
+    def last_frame(self) -> npt.NDArray[Any] | None:
+        """Most recent frame captured by the camera."""
+        return self._last_frame
 
     @property
     def monitoring_enabled(self) -> bool:
@@ -302,6 +308,8 @@ class DetectionPipeline:
             if frame is None:
                 await asyncio.sleep(0.1)
                 continue
+
+            self._last_frame = frame
 
             two_stage = self._config.detection.two_stage
             if two_stage.enabled:

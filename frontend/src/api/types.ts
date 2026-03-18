@@ -227,3 +227,33 @@ export interface SetupResponse {
   access_token: string;
   token_type: string;
 }
+
+// --- Training types ---
+
+export interface TrainingSample {
+  id: number;
+  image_path: string;
+  label: string;
+  is_positive: boolean;
+  bbox: number[] | null;
+  confidence: number | null;
+  source: string;
+  source_event_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface TrainingSampleListResponse {
+  samples: TrainingSample[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TrainingStats {
+  total: number;
+  positive: number;
+  negative: number;
+  by_label: Record<string, number>;
+  by_source: Record<string, number>;
+}

@@ -20,6 +20,7 @@ from couch_hound.config import CONFIG_PATH, AppConfig, load_config
 from couch_hound.database import EventDatabase
 from couch_hound.media_server import start_media_server
 from couch_hound.pipeline import DetectionPipeline
+from couch_hound.training_db import TrainingDatabase
 from couch_hound.updater import UpdateManager
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.exception("Event database initialization failed, events will be unavailable")
         event_db = None
     app.state.event_db = event_db
+
+    # Initialize training database
+    training_db: TrainingDatabase | None = None
+    try:
+        training_db = TrainingDatabase()
+        await training_db.init()
+    except Exception:
+        logger.exception("Training database initialization failed")
+        training_db = None
+    app.state.training_db = training_db
 
     # Start detection pipeline with WebSocket broadcasting and event logging
     pipeline = DetectionPipeline(config)
@@ -108,6 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await pipeline.stop()
     if event_db is not None:
         await event_db.close()
+    if training_db is not None:
+        await training_db.close()
 
 
 def create_app() -> FastAPI:
@@ -133,6 +146,7 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_roi import router as roi_router
     from couch_hound.api.routes_snapshots import router as snapshots_router
     from couch_hound.api.routes_system import router as system_router
+    from couch_hound.api.routes_training import router as training_router
     from couch_hound.api.routes_update import router as update_router
     from couch_hound.api.routes_upload import router as upload_router
     from couch_hound.api.websocket import router as ws_router
@@ -142,6 +156,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router, prefix="/api")
     app.include_router(actions_router, prefix="/api")
     app.include_router(update_router, prefix="/api")
+    app.include_router(training_router, prefix="/api")
     app.include_router(upload_router, prefix="/api")
     app.include_router(events_router, prefix="/api")
     app.include_router(logs_router, prefix="/api")
