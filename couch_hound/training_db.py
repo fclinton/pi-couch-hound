@@ -49,9 +49,25 @@ class TrainingDatabase:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(_CREATE_SAMPLES_TABLE)
         await self._db.execute(_CREATE_INDEX)
+        await self._deduplicate_event_samples()
         await self._db.execute(_CREATE_EVENT_UNIQUE_INDEX)
         await self._db.commit()
         logger.info("Training database initialized at %s", self._path)
+
+    async def _deduplicate_event_samples(self) -> None:
+        """Remove duplicate samples for the same source_event_id, keeping the newest."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "DELETE FROM training_samples WHERE id NOT IN ("
+            "  SELECT MAX(id) FROM training_samples"
+            "  WHERE source_event_id IS NOT NULL"
+            "  GROUP BY source_event_id"
+            ") AND source_event_id IS NOT NULL"
+        )
+        if cursor.rowcount:
+            logger.warning(
+                "Removed %d duplicate training samples during migration", cursor.rowcount
+            )
 
     async def close(self) -> None:
         """Close the database connection."""
