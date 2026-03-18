@@ -133,6 +133,9 @@ export default function Events() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
                   Actions Fired
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
+                  Trained
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">
                   Delete
                 </th>
@@ -171,6 +174,22 @@ export default function Events() {
                     {event.actions_fired.length > 0
                       ? event.actions_fired.join(", ")
                       : "None"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {event.training ? (
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          event.training.is_positive
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {event.training.is_positive ? "+" : "-"}{" "}
+                        {event.training.label}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
