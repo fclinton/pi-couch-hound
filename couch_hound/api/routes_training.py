@@ -151,6 +151,14 @@ async def create_sample_from_event(
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    db = _get_training_db(request)
+    existing = await db.get_sample_by_event_id(event_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Event {event_id} already has a training sample (sample id {existing['id']})",
+        )
+
     # Copy snapshot to training images directory — validate path stays within snapshots dir
     snapshot_path = event.get("snapshot_path")
     if not snapshot_path:
@@ -165,7 +173,6 @@ async def create_sample_from_event(
     dest = _sanitize_path(f"event_{event_id}_{src_name}", _RESOLVED_TRAINING_DIR)
     shutil.copy2(src_resolved, dest)
 
-    db = _get_training_db(request)
     sample_id = await db.insert_sample(
         image_path=str(dest),
         label=str(event["label"]),

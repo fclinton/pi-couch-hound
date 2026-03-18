@@ -29,6 +29,11 @@ _CREATE_INDEX = """\
 CREATE INDEX IF NOT EXISTS idx_samples_label ON training_samples(label);
 """
 
+_CREATE_EVENT_UNIQUE_INDEX = """\
+CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_source_event_id
+ON training_samples(source_event_id) WHERE source_event_id IS NOT NULL;
+"""
+
 
 class TrainingDatabase:
     """Async SQLite database for training dataset management."""
@@ -44,6 +49,7 @@ class TrainingDatabase:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(_CREATE_SAMPLES_TABLE)
         await self._db.execute(_CREATE_INDEX)
+        await self._db.execute(_CREATE_EVENT_UNIQUE_INDEX)
         await self._db.commit()
         logger.info("Training database initialized at %s", self._path)
 
@@ -100,6 +106,17 @@ class TrainingDatabase:
         await self._db.commit()
         assert cursor.lastrowid is not None
         return cursor.lastrowid
+
+    async def get_sample_by_event_id(self, event_id: int) -> dict[str, object] | None:
+        """Fetch a training sample linked to a specific event, if any."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "SELECT * FROM training_samples WHERE source_event_id = ?", (event_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return self._deserialize_row(row)
 
     async def get_sample(self, sample_id: int) -> dict[str, object] | None:
         """Fetch a single sample by id."""
