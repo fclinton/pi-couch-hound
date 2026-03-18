@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ActionsTab from "./ActionsTab";
 import type { AppConfig } from "@/api/types";
+import { ApiValidationError } from "@/api/client";
 
 vi.mock("@/api/config", () => ({
   useUpdateConfigSection: vi.fn(),
@@ -99,5 +100,90 @@ describe("ActionsTab reorder", () => {
 
     // Save should now be enabled (dirty)
     expect(saveButton).toBeEnabled();
+  });
+});
+
+describe("ActionsTab validation", () => {
+  it("shows error when action has empty name", () => {
+    renderActionsTab([
+      { name: "", type: "sound" as const, enabled: true, sound_file: "bark.mp3" },
+    ]);
+
+    // Trigger dirty state by adding another action, then save
+    const addButton = screen.getByRole("button", { name: "Add action" });
+    fireEvent.click(addButton);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(saveButton);
+
+    const nameErrors = screen.getAllByText(/is missing a name/);
+    expect(nameErrors.length).toBeGreaterThanOrEqual(1);
+    expect(nameErrors[0]).toBeInTheDocument();
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows error when sound action is missing sound_file", () => {
+    renderActionsTab([]);
+
+    // Add a new action (defaults to sound type with empty fields)
+    const addButton = screen.getByRole("button", { name: "Add action" });
+    fireEvent.click(addButton);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(saveButton);
+
+    expect(screen.getByText(/Sound file is required/)).toBeInTheDocument();
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not call mutate when client validation fails", () => {
+    renderActionsTab([]);
+
+    const addButton = screen.getByRole("button", { name: "Add action" });
+    fireEvent.click(addButton);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(saveButton);
+
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("displays server-side validation errors from ApiValidationError", () => {
+    const serverError = new ApiValidationError([
+      { loc: ["actions", 0, "volume"], msg: "Input should be less than or equal to 100", type: "less_than_equal" },
+    ]);
+
+    mockUseUpdateConfigSection.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+      isError: true,
+      isSuccess: false,
+      error: serverError,
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useUpdateConfigSection>);
+
+    renderActionsTab([
+      { name: "Alert", type: "sound" as const, enabled: true, sound_file: "bark.mp3", volume: 150 },
+    ]);
+
+    expect(screen.getByText(/Action 1 → volume/)).toBeInTheDocument();
+    expect(screen.getByText(/less than or equal to 100/)).toBeInTheDocument();
+  });
+
+  it("displays generic error message for non-validation server errors", () => {
+    mockUseUpdateConfigSection.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+      isError: true,
+      isSuccess: false,
+      error: new Error("API error: 500 Internal Server Error"),
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useUpdateConfigSection>);
+
+    renderActionsTab([
+      { name: "Alert", type: "sound" as const, enabled: true, sound_file: "bark.mp3" },
+    ]);
+
+    expect(screen.getByText(/Save failed. Please check your values/)).toBeInTheDocument();
   });
 });

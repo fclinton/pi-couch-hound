@@ -6,6 +6,37 @@ import { TextInput, NumberInput, SelectInput, Toggle, SaveBar } from "./FormFiel
 import { ChromecastDeviceSelect } from "./ChromecastDeviceSelect";
 import { TemplateTextarea } from "./TemplateTextarea";
 
+const REQUIRED_FIELDS: Record<ActionType, { field: keyof ActionConfig; label: string }[]> = {
+  sound: [{ field: "sound_file", label: "Sound file" }],
+  snapshot: [{ field: "save_dir", label: "Save directory" }],
+  http: [{ field: "url", label: "URL" }],
+  mqtt: [
+    { field: "broker", label: "Broker" },
+    { field: "topic", label: "Topic" },
+  ],
+  script: [{ field: "command", label: "Command" }],
+  gpio: [{ field: "pin", label: "Pin" }],
+  chromecast: [{ field: "device_name", label: "Device name" }],
+};
+
+function validateActions(actions: ActionConfig[]): string[] {
+  const errors: string[] = [];
+  actions.forEach((action, i) => {
+    const label = action.name ? `"${action.name}"` : `Action ${i + 1}`;
+    if (!action.name.trim()) {
+      errors.push(`${label} is missing a name`);
+    }
+    const required = REQUIRED_FIELDS[action.type] ?? [];
+    for (const { field, label: fieldLabel } of required) {
+      const val = action[field];
+      if (val === null || val === undefined || val === "") {
+        errors.push(`${label} (${action.type}): ${fieldLabel} is required`);
+      }
+    }
+  });
+  return errors;
+}
+
 interface Props {
   config: AppConfig;
 }
@@ -245,12 +276,16 @@ function ActionFields({
 export default function ActionsTab({ config }: Props) {
   const [actions, setActions] = useState<ActionConfig[]>(config.actions);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [clientErrors, setClientErrors] = useState<string[]>([]);
 
   const mutation = useUpdateConfigSection();
 
   const dirty = JSON.stringify(actions) !== JSON.stringify(config.actions);
 
   const handleSave = () => {
+    const errors = validateActions(actions);
+    setClientErrors(errors);
+    if (errors.length > 0) return;
     mutation.mutate({ section: "actions", data: actions });
   };
 
@@ -258,6 +293,7 @@ export default function ActionsTab({ config }: Props) {
     const next = [...actions];
     next[index] = action;
     setActions(next);
+    if (clientErrors.length > 0) setClientErrors([]);
   };
 
   const removeAction = (index: number) => {
@@ -359,7 +395,7 @@ export default function ActionsTab({ config }: Props) {
         </div>
       ))}
 
-      <SaveBar mutation={mutation} dirty={dirty} onSave={handleSave} />
+      <SaveBar mutation={mutation} dirty={dirty} onSave={handleSave} clientErrors={clientErrors} />
     </div>
   );
 }

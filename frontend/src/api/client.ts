@@ -2,6 +2,22 @@ import { getToken } from "@/stores/authStore";
 
 const BASE_URL = "/api";
 
+export interface FieldError {
+  loc: (string | number)[];
+  msg: string;
+  type: string;
+}
+
+export class ApiValidationError extends Error {
+  fieldErrors: FieldError[];
+
+  constructor(fieldErrors: FieldError[]) {
+    super("Validation failed");
+    this.name = "ApiValidationError";
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
@@ -21,6 +37,16 @@ export async function apiFetch<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 422) {
+      try {
+        const body = await res.json();
+        if (Array.isArray(body.detail)) {
+          throw new ApiValidationError(body.detail as FieldError[]);
+        }
+      } catch (e) {
+        if (e instanceof ApiValidationError) throw e;
+      }
+    }
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
 

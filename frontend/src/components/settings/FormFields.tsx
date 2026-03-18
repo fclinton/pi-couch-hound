@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { AppConfig } from "@/api/types";
+import { ApiValidationError } from "@/api/client";
+import type { FieldError } from "@/api/client";
 
 interface TextInputProps {
   label: string;
@@ -131,13 +133,35 @@ export function SelectInput({ label, value, onChange, options }: SelectInputProp
   );
 }
 
+function formatFieldLoc(loc: (string | number)[]): string {
+  // Pydantic loc is e.g. ["actions", 0, "volume"] — make it human-readable
+  const parts: string[] = [];
+  for (let i = 0; i < loc.length; i++) {
+    const seg = loc[i];
+    if (seg === "actions" && typeof loc[i + 1] === "number") {
+      parts.push(`Action ${(loc[i + 1] as number) + 1}`);
+      i++; // skip the index
+    } else if (typeof seg === "string") {
+      parts.push(seg.replace(/_/g, " "));
+    }
+  }
+  return parts.join(" \u2192 ") || "Unknown field";
+}
+
+function formatFieldErrors(errors: FieldError[]): string[] {
+  return errors.map(
+    (e) => `${formatFieldLoc(e.loc)}: ${e.msg}`,
+  );
+}
+
 interface SaveBarProps {
   mutation: UseMutationResult<AppConfig, Error, { section: string; data: unknown }>;
   dirty: boolean;
   onSave: () => void;
+  clientErrors?: string[];
 }
 
-export function SaveBar({ mutation, dirty, onSave }: SaveBarProps) {
+export function SaveBar({ mutation, dirty, onSave, clientErrors = [] }: SaveBarProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
@@ -147,26 +171,48 @@ export function SaveBar({ mutation, dirty, onSave }: SaveBarProps) {
     return () => clearTimeout(timerRef.current);
   }, [mutation.isSuccess, mutation]);
 
+  const serverErrors =
+    mutation.isError && mutation.error instanceof ApiValidationError
+      ? formatFieldErrors(mutation.error.fieldErrors)
+      : mutation.isError
+        ? ["Save failed. Please check your values and try again."]
+        : [];
+
+  const allErrors = [...clientErrors, ...serverErrors];
+
   return (
-    <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
-      {mutation.isError && (
-        <p className="text-sm text-red-600">Save failed. Check values.</p>
+    <div className="space-y-2 border-t border-gray-200 pt-4">
+      {allErrors.length > 0 && (
+        <div className="rounded-md bg-red-50 p-3">
+          <p className="text-sm font-medium text-red-800">
+            Please fix the following {allErrors.length === 1 ? "issue" : "issues"}:
+          </p>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {allErrors.map((msg, i) => (
+              <li key={i} className="text-sm text-red-700">
+                {msg}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      {mutation.isSuccess && (
-        <p className="text-sm text-green-600">Saved.</p>
-      )}
-      <button
-        onClick={onSave}
-        disabled={mutation.isPending || !dirty}
-        className={cn(
-          "rounded-md px-4 py-2 text-sm font-medium text-white",
-          dirty
-            ? "bg-brand-500 hover:bg-brand-600"
-            : "cursor-not-allowed bg-gray-300",
+      <div className="flex items-center justify-end gap-3">
+        {mutation.isSuccess && (
+          <p className="text-sm text-green-600">Saved.</p>
         )}
-      >
-        {mutation.isPending ? "Saving..." : "Save"}
-      </button>
+        <button
+          onClick={onSave}
+          disabled={mutation.isPending || !dirty}
+          className={cn(
+            "rounded-md px-4 py-2 text-sm font-medium text-white",
+            dirty
+              ? "bg-brand-500 hover:bg-brand-600"
+              : "cursor-not-allowed bg-gray-300",
+          )}
+        >
+          {mutation.isPending ? "Saving..." : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
