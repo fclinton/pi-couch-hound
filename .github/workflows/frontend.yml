@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   lint-and-test:
@@ -38,7 +39,13 @@ jobs:
 
       - name: Run tests
         working-directory: frontend
-        run: npm test
+        run: npm test -- --coverage
+
+      - name: Coverage report
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: frontend
 
       - name: Build
         working-directory: frontend
