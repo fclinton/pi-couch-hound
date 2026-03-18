@@ -150,6 +150,7 @@ class LoggingConfig(BaseModel):
 
 class UpdateConfig(BaseModel):
     enabled: bool = False
+    channel: Literal["stable", "nightly"] = "stable"
     check_interval_minutes: int = Field(default=60, ge=5, le=1440)
     auto_apply: bool = False
     maintenance_window_start: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")

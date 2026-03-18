@@ -46,6 +46,7 @@ export default function SystemTab({ config }: Props) {
 
   // Update state
   const [updateEnabled, setUpdateEnabled] = useState(config.update.enabled);
+  const [channel, setChannel] = useState(config.update.channel);
   const [checkInterval, setCheckInterval] = useState(config.update.check_interval_minutes);
   const [autoApply, setAutoApply] = useState(config.update.auto_apply);
   const [windowStart, setWindowStart] = useState(config.update.maintenance_window_start ?? "");
@@ -81,6 +82,7 @@ export default function SystemTab({ config }: Props) {
 
   const updateDirty =
     updateEnabled !== config.update.enabled ||
+    channel !== config.update.channel ||
     checkInterval !== config.update.check_interval_minutes ||
     autoApply !== config.update.auto_apply ||
     windowStart !== (config.update.maintenance_window_start ?? "") ||
@@ -163,6 +165,7 @@ export default function SystemTab({ config }: Props) {
       section: "update",
       data: {
         enabled: updateEnabled,
+        channel,
         check_interval_minutes: checkInterval,
         auto_apply: autoApply,
         maintenance_window_start: windowStart || null,
@@ -316,6 +319,15 @@ export default function SystemTab({ config }: Props) {
         />
         {updateEnabled && (
           <>
+            <SelectInput
+              label="Release channel"
+              value={channel}
+              onChange={(v) => setChannel(v as typeof channel)}
+              options={[
+                { value: "stable", label: "Stable" },
+                { value: "nightly", label: "Nightly (experimental)" },
+              ]}
+            />
             <NumberInput
               label="Check interval (minutes)"
               value={checkInterval}
