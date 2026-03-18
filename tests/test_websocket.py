@@ -35,6 +35,7 @@ def ws_app() -> FastAPI:
     # Mock pipeline with just the attributes WS endpoints need
     mock_pipeline = MagicMock()
     mock_pipeline.state = PipelineState.RUNNING
+    mock_pipeline.monitoring_enabled = True
     mock_pipeline.stats = PipelineStats(detection_count=3, last_detection_time=None)
     app.state.pipeline = mock_pipeline
 
