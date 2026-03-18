@@ -3,6 +3,7 @@ import { useUpdateConfigSection } from "@/api/config";
 import type { ActionConfig, ActionType, AppConfig } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { TextInput, NumberInput, SelectInput, Toggle, SaveBar } from "./FormFields";
+import { ChromecastDeviceSelect } from "./ChromecastDeviceSelect";
 import { TemplateTextarea } from "./TemplateTextarea";
 
 interface Props {
@@ -210,7 +211,7 @@ function ActionFields({
       {action.type === "chromecast" && (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <TextInput
+            <ChromecastDeviceSelect
               label="Device name"
               value={action.device_name ?? ""}
               onChange={(v) => set("device_name", v || null)}
