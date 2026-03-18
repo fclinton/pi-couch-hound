@@ -157,6 +157,7 @@ export interface LogsResponse {
 
 export interface UpdateConfig {
   enabled: boolean;
+  channel: "stable" | "nightly";
   check_interval_minutes: number;
   auto_apply: boolean;
   maintenance_window_start: string | null;

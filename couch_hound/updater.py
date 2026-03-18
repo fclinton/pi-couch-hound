@@ -64,7 +64,7 @@ class UpdateManager:
 
         self._info.current_version = __version__
         self._repo = __repo__
-        self._api_url = f"https://api.github.com/repos/{self._repo}/releases/latest"
+        self._api_base = f"https://api.github.com/repos/{self._repo}/releases"
 
     def get_info(self) -> UpdateInfo:
         """Return a snapshot of the current update state."""
@@ -90,18 +90,31 @@ class UpdateManager:
             data = await self._fetch_latest_release()
 
             tag = data.get("tag_name", "")
-            remote_version_str = tag.lstrip("v")
 
-            try:
-                remote_version = Version(remote_version_str)
-                current_version = Version(self._info.current_version)
-            except InvalidVersion as exc:
-                self._info.state = UpdateState.ERROR
-                self._info.last_error = f"Invalid version format: {exc}"
-                self._info.last_check_time = datetime.now().isoformat()
-                return self._info
+            is_newer: bool
+            display_version: str
 
-            if remote_version <= current_version:
+            if self._config.channel == "nightly":
+                # Nightly tags look like "nightly-20260318"; compare against the
+                # tag that produced the currently running build (stored in
+                # current_version for nightly installs) or always offer if the
+                # user just switched to the nightly channel from a semver build.
+                display_version = tag
+                is_newer = tag != self._info.current_version
+            else:
+                remote_version_str = tag.lstrip("v")
+                display_version = remote_version_str
+                try:
+                    remote_version = Version(remote_version_str)
+                    current_version = Version(self._info.current_version)
+                except InvalidVersion as exc:
+                    self._info.state = UpdateState.ERROR
+                    self._info.last_error = f"Invalid version format: {exc}"
+                    self._info.last_check_time = datetime.now().isoformat()
+                    return self._info
+                is_newer = remote_version > current_version
+
+            if not is_newer:
                 self._info.state = UpdateState.UP_TO_DATE
                 self._info.available_version = None
                 self._info.release_url = None
@@ -110,7 +123,7 @@ class UpdateManager:
                 self._info.python_compatible = True
             else:
                 self._info.state = UpdateState.AVAILABLE
-                self._info.available_version = remote_version_str
+                self._info.available_version = display_version
                 self._info.release_notes = data.get("body")
 
                 # Find the tarball asset
@@ -230,15 +243,36 @@ class UpdateManager:
             return self._info
 
     async def _fetch_latest_release(self) -> dict[str, Any]:
-        """Fetch the latest release metadata from GitHub API."""
+        """Fetch the latest release metadata from GitHub API.
+
+        For the *stable* channel, uses ``/releases/latest`` (which excludes
+        pre-releases).  For the *nightly* channel, lists recent releases and
+        picks the newest one whose tag starts with ``nightly-``.
+        """
+        if self._config.channel == "nightly":
+            url = f"{self._api_base}?per_page=20"
+        else:
+            url = f"{self._api_base}/latest"
+
         request = urllib.request.Request(
-            self._api_url,
+            url,
             headers={"Accept": "application/vnd.github+json", "User-Agent": "pi-couch-hound"},
         )
 
         def _do_fetch() -> dict[str, Any]:
             with urllib.request.urlopen(request, timeout=30) as resp:
-                return json.loads(resp.read().decode())  # type: ignore[no-any-return]
+                data = json.loads(resp.read().decode())
+
+            if self._config.channel == "nightly":
+                for release in data:
+                    tag: str = release.get("tag_name", "")
+                    if tag.startswith("nightly-"):
+                        return release  # type: ignore[no-any-return]
+                msg = "No nightly releases found"
+                hdrs: Any = {}
+                raise urllib.error.HTTPError(url, 404, msg, hdrs, None)
+
+            return data  # type: ignore[no-any-return]
 
         return await asyncio.to_thread(_do_fetch)
 

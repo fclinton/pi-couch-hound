@@ -1,0 +1,131 @@
+name: Nightly Experimental Release
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 3:00 AM UTC daily
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits since last nightly
+        id: check
+        run: |
+          LAST_NIGHTLY=$(gh release list --json tagName,isPrerelease \
+            --jq '[.[] | select(.tagName | startswith("nightly-"))] | first | .tagName // empty')
+
+          if [ -z "$LAST_NIGHTLY" ]; then
+            echo "No previous nightly release found — proceeding."
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+          else
+            LAST_TAG_SHA=$(git rev-list -n 1 "$LAST_NIGHTLY" 2>/dev/null || echo "")
+            HEAD_SHA=$(git rev-parse HEAD)
+
+            if [ "$LAST_TAG_SHA" = "$HEAD_SHA" ]; then
+              echo "No new commits since $LAST_NIGHTLY — skipping."
+              echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "New commits found since $LAST_NIGHTLY — proceeding."
+              echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        if: steps.check.outputs.has_new_commits == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Node.js
+        if: steps.check.outputs.has_new_commits == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and test backend
+        if: steps.check.outputs.has_new_commits == 'true'
+        run: |
+          pip install -e ".[dev]"
+          ruff check couch_hound/ tests/
+          ruff format --check couch_hound/ tests/
+          python -m mypy couch_hound/
+          pytest tests/ -v
+
+      - name: Build and test frontend
+        if: steps.check.outputs.has_new_commits == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run type-check
+          npm test
+          npm run build
+
+      - name: Generate nightly version
+        if: steps.check.outputs.has_new_commits == 'true'
+        id: version
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "tag=nightly-${DATE}" >> "$GITHUB_OUTPUT"
+          echo "name=${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete previous nightly tag if same date
+        if: steps.check.outputs.has_new_commits == 'true'
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag || true
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release tarball
+        if: steps.check.outputs.has_new_commits == 'true'
+        run: |
+          RELEASE_DIR="pi-couch-hound-${{ steps.version.outputs.name }}"
+          mkdir -p "/tmp/${RELEASE_DIR}"
+
+          # Copy runtime files
+          cp -r couch_hound "/tmp/${RELEASE_DIR}/"
+          mkdir -p "/tmp/${RELEASE_DIR}/frontend"
+          cp -r frontend/dist "/tmp/${RELEASE_DIR}/frontend/dist"
+          cp -r sounds "/tmp/${RELEASE_DIR}/" 2>/dev/null || mkdir -p "/tmp/${RELEASE_DIR}/sounds"
+          cp -r scripts "/tmp/${RELEASE_DIR}/" 2>/dev/null || true
+          mkdir -p "/tmp/${RELEASE_DIR}/models"
+
+          # Copy top-level files
+          cp install.sh pyproject.toml config.example.yaml LICENSE "/tmp/${RELEASE_DIR}/"
+          cp README.md "/tmp/${RELEASE_DIR}/" 2>/dev/null || true
+          cp requirements.txt "/tmp/${RELEASE_DIR}/" 2>/dev/null || true
+
+          cd /tmp && tar -czf "${RELEASE_DIR}.tar.gz" "${RELEASE_DIR}"
+          echo "TARBALL=/tmp/${RELEASE_DIR}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.has_new_commits == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Nightly Experimental — ${{ steps.version.outputs.name }}"
+          files: ${{ env.TARBALL }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            **Experimental nightly build** — not recommended for production use.
+
+            Built from `${{ github.sha }}` on `${{ github.ref_name }}`.
