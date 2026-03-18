@@ -22,9 +22,13 @@ class ScriptAction(BaseAction):
             stderr=subprocess.PIPE,
         )
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError as exc:
             proc.kill()
             raise RuntimeError(f"Script timed out after {timeout}s") from exc
         if proc.returncode != 0:
-            raise RuntimeError(f"Script exited with code {proc.returncode}")
+            output = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+            msg = f"Script exited with code {proc.returncode}"
+            if output:
+                msg += f": {output}"
+            raise RuntimeError(msg)
