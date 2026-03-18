@@ -255,3 +255,17 @@ class TrainingStatsResponse(BaseModel):
 class TrainingSampleFromEventRequest(BaseModel):
     is_positive: bool = True
     notes: str | None = None
+
+
+# ── Chromecast ──
+
+
+class ChromecastDeviceInfo(BaseModel):
+    friendly_name: str
+    model_name: str | None = None
+    uuid: str
+
+
+class ChromecastDiscoverResponse(BaseModel):
+    devices: list[ChromecastDeviceInfo]
+    scan_duration: float
