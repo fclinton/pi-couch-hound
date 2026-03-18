@@ -79,3 +79,32 @@ Both trigger on pushes and PRs to main/master for their respective paths.
 - Mypy strict mode with pydantic plugin
 - pytest with asyncio_mode = "auto"
 - Always run `ruff check` and `ruff format --check` before committing
+
+## Security Scanning
+
+Run CodeQL locally before pushing backend changes to catch security issues early (path traversal, injection, etc.):
+
+```bash
+# Install CodeQL (first time only)
+cd /tmp && wget -q https://github.com/github/codeql-action/releases/latest/download/codeql-bundle-linux64.tar.gz -O codeql-bundle.tar.gz && tar -xzf codeql-bundle.tar.gz
+
+# From project root — create database and analyze
+/tmp/codeql/codeql database create /tmp/codeql-db --language=python --source-root . --overwrite
+/tmp/codeql/codeql database analyze /tmp/codeql-db --format=sarif-latest --output=/tmp/codeql-results.sarif /tmp/codeql/qlpacks/codeql/python-queries/*/codeql-suites/python-security-extended.qls
+
+# View results
+python3 -c "
+import json
+results = json.load(open('/tmp/codeql-results.sarif'))['runs'][0]['results']
+print(f'Findings: {len(results)}')
+for r in results:
+    locs = r.get('locations', [])
+    for loc in locs:
+        pl = loc.get('physicalLocation', {})
+        f = pl.get('artifactLocation', {}).get('uri', '?')
+        line = pl.get('region', {}).get('startLine', '?')
+        print(f'  [{r[\"ruleId\"]}] {f}:{line}')
+"
+```
+
+This matches the CodeQL checks that run on GitHub PRs. Fix any `py/path-injection` or other high-severity findings before pushing.
