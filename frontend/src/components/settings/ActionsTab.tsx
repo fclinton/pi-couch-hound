@@ -286,7 +286,7 @@ export default function ActionsTab({ config }: Props) {
     const errors = validateActions(actions);
     setClientErrors(errors);
     if (errors.length > 0) return;
-    mutation.mutate({ section: "actions", data: actions });
+    mutation.mutate({ section: "actions", data: { actions } });
   };
 
   const updateAction = (index: number, action: ActionConfig) => {
