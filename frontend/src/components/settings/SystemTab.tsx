@@ -356,9 +356,6 @@ export default function SystemTab({ config }: Props) {
               <div className="space-y-1">
                 <p className="text-sm text-gray-700">
                   Version: <span className="font-mono font-medium">{updateStatus.current_version}</span>
-                  {updateStatus.current_commit && (
-                    <span className="ml-2 text-gray-500">({updateStatus.current_commit})</span>
-                  )}
                 </p>
                 {updateStatus.last_check_time && (
                   <p className="text-xs text-gray-500">
@@ -377,7 +374,7 @@ export default function SystemTab({ config }: Props) {
                 )}
               >
                 {updateStatus.state === "up_to_date" && "Up to date"}
-                {updateStatus.state === "available" && `${updateStatus.commits_behind} update(s) available`}
+                {updateStatus.state === "available" && `v${updateStatus.available_version} available`}
                 {updateStatus.state === "checking" && "Checking..."}
                 {updateStatus.state === "applying" && "Applying..."}
                 {updateStatus.state === "error" && "Error"}
@@ -391,15 +388,10 @@ export default function SystemTab({ config }: Props) {
                     New version: <span className="font-mono font-medium">{updateStatus.available_version}</span>
                   </p>
                 )}
-                {updateStatus.commit_messages.length > 0 && (
-                  <ul className="list-disc pl-5 text-xs text-gray-600 space-y-0.5">
-                    {updateStatus.commit_messages.slice(0, 5).map((msg, i) => (
-                      <li key={i}>{msg}</li>
-                    ))}
-                    {updateStatus.commit_messages.length > 5 && (
-                      <li>...and {updateStatus.commit_messages.length - 5} more</li>
-                    )}
-                  </ul>
+                {updateStatus.release_notes && (
+                  <p className="whitespace-pre-line text-xs text-gray-600">
+                    {updateStatus.release_notes}
+                  </p>
                 )}
               </div>
             )}

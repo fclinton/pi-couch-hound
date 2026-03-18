@@ -8,6 +8,7 @@ import time
 
 from fastapi import APIRouter, Request
 
+from couch_hound import __version__
 from couch_hound.actions import create_action
 from couch_hound.api.schemas import (
     ActionResultItem,
@@ -37,7 +38,7 @@ async def get_status(request: Request) -> StatusResponse:
     return StatusResponse(
         status="running",
         uptime_seconds=round(time.time() - _start_time, 1),
-        version="0.1.0",
+        version=__version__,
         detection_count=pipeline.stats.detection_count,
         last_detection_time=pipeline.stats.last_detection_time,
         monitoring_enabled=pipeline.monitoring_enabled,

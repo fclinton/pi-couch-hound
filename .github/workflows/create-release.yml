@@ -1,0 +1,77 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate version format and ordering
+        run: |
+          python3 -c "
+          from packaging.version import Version, InvalidVersion
+          import re, sys
+
+          new = '${{ inputs.version }}'
+
+          # Validate format
+          if not re.match(r'^\d+\.\d+\.\d+$', new):
+              print(f'Error: Version must be in X.Y.Z format, got: {new}')
+              sys.exit(1)
+
+          try:
+              new_ver = Version(new)
+          except InvalidVersion:
+              print(f'Error: Invalid version: {new}')
+              sys.exit(1)
+
+          # Read current version
+          with open('couch_hound/__init__.py') as f:
+              content = f.read()
+          match = re.search(r'__version__\s*=\s*\"([^\"]+)\"', content)
+          if not match:
+              print('Error: Could not find __version__ in couch_hound/__init__.py')
+              sys.exit(1)
+
+          current = match.group(1)
+          current_ver = Version(current)
+
+          if new_ver <= current_ver:
+              print(f'Error: New version ({new}) must be greater than current version ({current})')
+              sys.exit(1)
+
+          print(f'Version bump: {current} -> {new}')
+          "
+
+      - name: Bump version in couch_hound/__init__.py
+        run: |
+          sed -i 's/^__version__ = ".*"/__version__ = "${{ inputs.version }}"/' couch_hound/__init__.py
+
+      - name: Bump version in frontend/package.json
+        run: |
+          cd frontend && npm version "${{ inputs.version }}" --no-git-tag-version
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add couch_hound/__init__.py frontend/package.json
+          git commit -m "Bump version to ${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          git push origin HEAD --tags

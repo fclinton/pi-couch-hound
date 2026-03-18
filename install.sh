@@ -17,6 +17,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 WITH_GPIO=false
 WITH_SYSTEMD=false
 NO_PROMPT=false
+DEV_MODE=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Parse Arguments ───────────────────────────────────
@@ -29,6 +30,7 @@ for arg in "$@"; do
         --with-gpio)    WITH_GPIO=true ;;
         --with-systemd) WITH_SYSTEMD=true ;;
         --no-prompt)    NO_PROMPT=true ;;
+        --dev)          DEV_MODE=true ;;
         --help|-h)
             echo "Usage: ./install.sh [OPTIONS]"
             echo ""
@@ -37,6 +39,7 @@ for arg in "$@"; do
             echo "  --with-gpio      Install Raspberry Pi GPIO support"
             echo "  --with-systemd   Install and enable systemd service"
             echo "  --no-prompt      Skip interactive prompts (use defaults + flags)"
+            echo "  --dev            Developer mode: build frontend from source (requires Node.js/npm)"
             echo "  -h, --help       Show this help message"
             exit 0
             ;;
@@ -87,18 +90,21 @@ if [ -z "$PYTHON" ]; then
 fi
 ok "Python: $($PYTHON --version)"
 
-if ! command -v node &>/dev/null; then
-    error "Node.js is required but not found."
-    error "Install it with: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt install -y nodejs"
-    exit 1
-fi
-ok "Node.js: $(node --version)"
+# Node.js/npm only required in dev mode or when frontend is not pre-built
+if [ "$DEV_MODE" = true ] && [ ! -d "frontend/dist" ]; then
+    if ! command -v node &>/dev/null; then
+        error "Node.js is required for --dev mode but not found."
+        error "Install it with: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt install -y nodejs"
+        exit 1
+    fi
+    ok "Node.js: $(node --version)"
 
-if ! command -v npm &>/dev/null; then
-    error "npm is required but not found."
-    exit 1
+    if ! command -v npm &>/dev/null; then
+        error "npm is required for --dev mode but not found."
+        exit 1
+    fi
+    ok "npm: $(npm --version)"
 fi
-ok "npm: $(npm --version)"
 echo ""
 
 # ── 2. Create Python venv ────────────────────────────
@@ -147,9 +153,15 @@ fi
 echo ""
 
 # ── 6. Build Frontend ────────────────────────────────
-info "Building frontend..."
-(cd frontend && npm ci --silent && npm run build --silent)
-ok "Frontend built to frontend/dist/"
+if [ -d "frontend/dist" ]; then
+    ok "Pre-built frontend found at frontend/dist/"
+elif [ "$DEV_MODE" = true ]; then
+    info "Building frontend from source..."
+    (cd frontend && npm ci --silent && npm run build --silent)
+    ok "Frontend built to frontend/dist/"
+else
+    warn "frontend/dist/ not found. Use a release tarball or run with --dev to build from source."
+fi
 echo ""
 
 # ── 7. systemd Service (optional) ────────────────────

@@ -182,14 +182,11 @@ class SetupResponse(BaseModel):
 
 class UpdateStatusResponse(BaseModel):
     state: str
-    current_commit: str
-    remote_commit: str | None
     current_version: str
     available_version: str | None
+    release_notes: str | None = None
     last_check_time: str | None
     last_error: str | None
-    commits_behind: int
-    commit_messages: list[str]
     requires_python: str | None = None
     python_compatible: bool = True
 
