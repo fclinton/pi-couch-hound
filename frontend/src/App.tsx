@@ -8,6 +8,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Events = lazy(() => import("./pages/Events"));
 const EventStats = lazy(() => import("./pages/EventStats"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
+const Training = lazy(() => import("./pages/Training"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Logs = lazy(() => import("./pages/Logs"));
 const Login = lazy(() => import("./pages/Login"));
@@ -84,6 +85,7 @@ function App() {
         <Route path="/events/stats" element={<EventStats />} />
         <Route path="/events" element={<Events />} />
         <Route path="/events/:id" element={<EventDetail />} />
+        <Route path="/training" element={<Training />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/logs" element={<Logs />} />
       </Route>

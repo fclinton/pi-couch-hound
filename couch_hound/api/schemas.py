@@ -201,3 +201,53 @@ class LogsResponse(BaseModel):
     entries: list[LogEntry]
     total_lines: int
     returned: int
+
+
+# ── Training ──
+
+
+class TrainingSampleResponse(BaseModel):
+    id: int
+    image_path: str
+    label: str
+    is_positive: bool
+    bbox: list[float] | None = None
+    confidence: float | None = None
+    source: str
+    source_event_id: int | None = None
+    notes: str | None = None
+    created_at: str | None = None
+
+
+class TrainingSampleListResponse(BaseModel):
+    samples: list[TrainingSampleResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class TrainingSampleCreateRequest(BaseModel):
+    label: str
+    is_positive: bool = True
+    bbox: list[float] | None = None
+    notes: str | None = None
+
+
+class TrainingSampleUpdateRequest(BaseModel):
+    label: str | None = None
+    is_positive: bool | None = None
+    bbox: list[float] | None = None
+    notes: str | None = None
+
+
+class TrainingStatsResponse(BaseModel):
+    total: int
+    positive: int
+    negative: int
+    by_label: dict[str, int]
+    by_source: dict[str, int]
+
+
+class TrainingSampleFromEventRequest(BaseModel):
+    is_positive: bool = True
+    notes: str | None = None
