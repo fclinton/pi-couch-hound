@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from couch_hound import __version__
 from couch_hound.config import UpdateConfig
 from couch_hound.updater import UpdateManager, UpdateState
 
@@ -45,7 +46,7 @@ def manager(update_config: UpdateConfig, tmp_path: Path) -> UpdateManager:
 
 async def test_check_no_updates(manager: UpdateManager) -> None:
     """When remote version matches current, state is UP_TO_DATE."""
-    release = _make_release_json(tag="v0.1.0")
+    release = _make_release_json(tag=f"v{__version__}")
     with patch.object(manager, "_fetch_latest_release", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = release
         info = await manager.check_for_updates()
@@ -57,13 +58,13 @@ async def test_check_no_updates(manager: UpdateManager) -> None:
 
 async def test_check_update_available(manager: UpdateManager) -> None:
     """When remote version is newer, state is AVAILABLE with release info."""
-    release = _make_release_json(tag="v0.2.0", body="New features")
+    release = _make_release_json(tag="v99.0.0", body="New features")
     with patch.object(manager, "_fetch_latest_release", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = release
         info = await manager.check_for_updates()
 
     assert info.state == UpdateState.AVAILABLE
-    assert info.available_version == "0.2.0"
+    assert info.available_version == "99.0.0"
     assert info.release_notes == "New features"
     assert info.release_url is not None
     assert info.release_url.endswith(".tar.gz")
@@ -262,4 +263,4 @@ def test_get_info_returns_current_state(manager: UpdateManager) -> None:
     """get_info returns the current state snapshot."""
     info = manager.get_info()
     assert info.state == UpdateState.UP_TO_DATE
-    assert info.current_version == "0.1.0"
+    assert info.current_version == __version__
