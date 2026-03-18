@@ -185,3 +185,19 @@ class UpdateStatusResponse(BaseModel):
     commit_messages: list[str]
     requires_python: str | None = None
     python_compatible: bool = True
+
+
+# ── Logs ──
+
+
+class LogEntry(BaseModel):
+    timestamp: str
+    level: str
+    logger: str
+    message: str
+
+
+class LogsResponse(BaseModel):
+    entries: list[LogEntry]
+    total_lines: int
+    returned: int

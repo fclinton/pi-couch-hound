@@ -9,6 +9,7 @@ const Events = lazy(() => import("./pages/Events"));
 const EventStats = lazy(() => import("./pages/EventStats"));
 const EventDetail = lazy(() => import("./pages/EventDetail"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Logs = lazy(() => import("./pages/Logs"));
 const Login = lazy(() => import("./pages/Login"));
 const Setup = lazy(() => import("./pages/Setup"));
 
@@ -84,6 +85,7 @@ function App() {
         <Route path="/events" element={<Events />} />
         <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/logs" element={<Logs />} />
       </Route>
     </Routes>
     </Suspense>

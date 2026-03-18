@@ -126,8 +126,22 @@ export interface WebConfig {
 export interface LoggingConfig {
   level: "DEBUG" | "INFO" | "WARNING" | "ERROR";
   file: string;
-  max_size_mb: number;
+  when: string;
+  interval: number;
   backup_count: number;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  logger: string;
+  message: string;
+}
+
+export interface LogsResponse {
+  entries: LogEntry[];
+  total_lines: number;
+  returned: number;
 }
 
 export interface UpdateConfig {

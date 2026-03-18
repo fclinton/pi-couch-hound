@@ -64,8 +64,9 @@ web:
 logging:
   level: INFO
   file: logs/couch-hound.log
-  max_size_mb: 50
-  backup_count: 3
+  when: midnight               # rotation schedule: midnight, H, D, W0-W6
+  interval: 1                  # rotate every N intervals
+  backup_count: 7              # number of rotated files to keep
 
 # ── Update ─────────────────────────────────────────
 update:

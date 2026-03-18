@@ -135,10 +135,13 @@ class WebConfig(BaseModel):
 
 
 class LoggingConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     file: str = "logs/couch-hound.log"
-    max_size_mb: int = 50
-    backup_count: int = 3
+    when: str = "midnight"
+    interval: int = 1
+    backup_count: int = 7
 
 
 class UpdateConfig(BaseModel):
@@ -200,12 +203,13 @@ def setup_logging(config: LoggingConfig) -> None:
     console.setFormatter(formatter)
     root.addHandler(console)
 
-    # Rotating file handler
+    # Timed rotating file handler
     log_path = Path(config.file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.handlers.RotatingFileHandler(
+    file_handler = logging.handlers.TimedRotatingFileHandler(
         log_path,
-        maxBytes=config.max_size_mb * 1024 * 1024,
+        when=config.when,
+        interval=config.interval,
         backupCount=config.backup_count,
     )
     file_handler.setFormatter(formatter)

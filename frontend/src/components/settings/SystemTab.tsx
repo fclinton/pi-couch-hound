@@ -40,7 +40,8 @@ export default function SystemTab({ config }: Props) {
   // Logging state
   const [level, setLevel] = useState(config.logging.level);
   const [logFile, setLogFile] = useState(config.logging.file);
-  const [maxSizeMb, setMaxSizeMb] = useState(config.logging.max_size_mb);
+  const [when, setWhen] = useState(config.logging.when);
+  const [logInterval, setLogInterval] = useState(config.logging.interval);
   const [backupCount, setBackupCount] = useState(config.logging.backup_count);
 
   // Update state
@@ -74,7 +75,8 @@ export default function SystemTab({ config }: Props) {
   const logDirty =
     level !== config.logging.level ||
     logFile !== config.logging.file ||
-    maxSizeMb !== config.logging.max_size_mb ||
+    when !== config.logging.when ||
+    logInterval !== config.logging.interval ||
     backupCount !== config.logging.backup_count;
 
   const updateDirty =
@@ -152,7 +154,7 @@ export default function SystemTab({ config }: Props) {
   const handleSaveLogging = () => {
     logMutation.mutate({
       section: "logging",
-      data: { level, file: logFile, max_size_mb: maxSizeMb, backup_count: backupCount },
+      data: { level, file: logFile, when, interval: logInterval, backup_count: backupCount },
     });
   };
 
@@ -286,7 +288,19 @@ export default function SystemTab({ config }: Props) {
           <TextInput label="Log file" value={logFile} onChange={setLogFile} />
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <NumberInput label="Max size (MB)" value={maxSizeMb} onChange={setMaxSizeMb} min={1} />
+          <SelectInput
+            label="Rotate"
+            value={when}
+            onChange={setWhen}
+            options={[
+              { value: "midnight", label: "Midnight" },
+              { value: "H", label: "Hourly" },
+              { value: "D", label: "Daily" },
+            ]}
+          />
+          <NumberInput label="Interval" value={logInterval} onChange={setLogInterval} min={1} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <NumberInput label="Backup count" value={backupCount} onChange={setBackupCount} min={0} />
         </div>
         <SaveBar mutation={logMutation} dirty={logDirty} onSave={handleSaveLogging} />
