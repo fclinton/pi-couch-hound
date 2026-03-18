@@ -2,24 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
-from couch_hound.api.app import create_app
 from couch_hound.config import AppConfig
-
-
-@pytest.fixture
-def config_client(tmp_path: Path) -> TestClient:
-    """Return a test client with a writable config file."""
-    app = create_app()
-    with TestClient(app) as client:
-        # Point config_path to a temp file so writes don't touch the real config
-        app.state.config_path = tmp_path / "config.yaml"
-        yield client
 
 
 def test_get_config(config_client: TestClient):
