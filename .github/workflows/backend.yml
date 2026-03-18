@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   lint-and-test:
@@ -45,4 +46,11 @@ jobs:
         run: python -m mypy couch_hound/
 
       - name: Run tests
-        run: pytest tests/ -v --cov=couch_hound --cov-report=term-missing
+        run: pytest tests/ -v --cov=couch_hound --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Coverage comment
+        if: github.event_name == 'pull_request'
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: coverage.xml
+          junitxml-path: ""
