@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from couch_hound import __version__
 from couch_hound.config import UpdateConfig
 from couch_hound.updater import UpdateManager, UpdateState
 
@@ -262,4 +263,4 @@ def test_get_info_returns_current_state(manager: UpdateManager) -> None:
     """get_info returns the current state snapshot."""
     info = manager.get_info()
     assert info.state == UpdateState.UP_TO_DATE
-    assert info.current_version == "0.1.0"
+    assert info.current_version == __version__

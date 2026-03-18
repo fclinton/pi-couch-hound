@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from couch_hound import __version__
 from couch_hound.api.app import create_app
 from couch_hound.config import ActionConfig, AppConfig
 from couch_hound.pipeline import PipelineStats
@@ -43,7 +44,7 @@ def test_status(client: TestClient):
     data = response.json()
     assert data["status"] == "running"
     assert "uptime_seconds" in data
-    assert data["version"] == "0.1.0"
+    assert data["version"] == __version__
     assert data["detection_count"] == 5
     assert data["last_detection_time"] == "2026-03-13T10:00:00"
     assert data["monitoring_enabled"] is True
