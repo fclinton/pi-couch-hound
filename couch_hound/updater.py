@@ -269,13 +269,8 @@ class UpdateManager:
                     if tag.startswith("nightly-"):
                         return release  # type: ignore[no-any-return]
                 msg = "No nightly releases found"
-                raise urllib.error.HTTPError(
-                    url,
-                    404,
-                    msg,
-                    {},
-                    None,  # type: ignore[arg-type]
-                )
+                hdrs: Any = {}
+                raise urllib.error.HTTPError(url, 404, msg, hdrs, None)
 
             return data  # type: ignore[no-any-return]
 
