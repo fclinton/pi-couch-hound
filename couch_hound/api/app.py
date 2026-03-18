@@ -18,6 +18,7 @@ from starlette.types import Receive, Scope, Send
 from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, AppConfig, load_config
 from couch_hound.database import EventDatabase
+from couch_hound.media_server import start_media_server
 from couch_hound.pipeline import DetectionPipeline
 from couch_hound.updater import UpdateManager
 
@@ -64,6 +65,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     update_stop = asyncio.Event()
     update_task = await update_manager.start(update_stop)
 
+    # Start media server (HTTP-only, for Chromecast file serving)
+    media_task: asyncio.Task[None] | None = None
+    try:
+        media_task = await start_media_server(
+            media_port=config.web.media_port,
+            main_port=config.web.port,
+            ssl_enabled=config.web.ssl.enabled,
+        )
+    except Exception:
+        logger.warning(
+            "Media server failed to start (port %d may be in use)",
+            config.web.media_port,
+        )
+
     # Watchdog: if pipeline permanently fails, terminate so systemd can restart us
     async def _pipeline_watchdog() -> None:
         await pipeline.fatal_error.wait()
@@ -75,6 +90,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     watchdog_task.cancel()
+    if media_task is not None:
+        media_task.cancel()
+        try:
+            await media_task
+        except asyncio.CancelledError:
+            pass
 
     # Shutdown: stop update checker, pipeline, and database
     update_stop.set()

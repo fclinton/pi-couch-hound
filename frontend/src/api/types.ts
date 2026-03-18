@@ -67,7 +67,8 @@ export type ActionType =
   | "http"
   | "mqtt"
   | "script"
-  | "gpio";
+  | "gpio"
+  | "chromecast";
 
 export interface ActionConfig {
   name: string;
@@ -90,6 +91,9 @@ export interface ActionConfig {
   pin?: number | null;
   mode?: "pulse" | "toggle" | "momentary" | null;
   duration?: number | null;
+  // Chromecast
+  device_name?: string | null;
+  media_url?: string | null;
 }
 
 export interface EscalationLevelConfig {

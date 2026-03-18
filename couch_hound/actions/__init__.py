@@ -22,6 +22,7 @@ def create_action(config: ActionConfig) -> BaseAction:
 
 def _register_actions() -> None:
     """Import action modules to populate the registry."""
+    from couch_hound.actions.chromecast import ChromecastAction
     from couch_hound.actions.gpio import GpioAction
     from couch_hound.actions.http import HttpAction
     from couch_hound.actions.mqtt import MqttAction
@@ -29,6 +30,7 @@ def _register_actions() -> None:
     from couch_hound.actions.snapshot import SnapshotAction
     from couch_hound.actions.sound import SoundAction
 
+    ACTION_REGISTRY["chromecast"] = ChromecastAction
     ACTION_REGISTRY["script"] = ScriptAction
     ACTION_REGISTRY["sound"] = SoundAction
     ACTION_REGISTRY["snapshot"] = SnapshotAction
