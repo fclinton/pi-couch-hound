@@ -90,6 +90,16 @@ if [ -z "$PYTHON" ]; then
 fi
 ok "Python: $($PYTHON --version)"
 
+# Check for uv
+if command -v uv &>/dev/null; then
+    ok "uv: $(uv --version)"
+    USE_UV=true
+else
+    warn "uv not found — falling back to pip. Install uv for faster installs:"
+    warn "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    USE_UV=false
+fi
+
 # Node.js/npm only required in dev mode or when frontend is not pre-built
 if [ "$DEV_MODE" = true ] && [ ! -d "frontend/dist" ]; then
     if ! command -v node &>/dev/null; then
@@ -107,32 +117,38 @@ if [ "$DEV_MODE" = true ] && [ ! -d "frontend/dist" ]; then
 fi
 echo ""
 
-# ── 2. Create Python venv ────────────────────────────
-if [ -d ".venv" ]; then
-    info "Python venv already exists at .venv/"
-else
-    info "Creating Python virtual environment..."
-    $PYTHON -m venv .venv
-    ok "Virtual environment created at .venv/"
-fi
-
-# shellcheck disable=SC1091
-source .venv/bin/activate
-echo ""
-
-# ── 3. Install Python package ────────────────────────
-info "Installing Pi Couch Hound..."
-
+# ── 2. Create Python venv & Install ──────────────────
 EXTRAS=""
 if [ "$WITH_GPIO" = true ] || { [ "$NO_PROMPT" = false ] && ask "Install Raspberry Pi GPIO support?"; }; then
-    EXTRAS="${EXTRAS:+$EXTRAS,}gpio"
+    EXTRAS="gpio"
     WITH_GPIO=true
 fi
 
-if [ -n "$EXTRAS" ]; then
-    pip install --quiet ".[$EXTRAS]"
+if [ "$USE_UV" = true ]; then
+    info "Installing Pi Couch Hound with uv..."
+    if [ -n "$EXTRAS" ]; then
+        uv sync --extra "$EXTRAS"
+    else
+        uv sync
+    fi
 else
-    pip install --quiet .
+    if [ -d ".venv" ]; then
+        info "Python venv already exists at .venv/"
+    else
+        info "Creating Python virtual environment..."
+        $PYTHON -m venv .venv
+        ok "Virtual environment created at .venv/"
+    fi
+
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+
+    info "Installing Pi Couch Hound..."
+    if [ -n "$EXTRAS" ]; then
+        pip install --quiet ".[$EXTRAS]"
+    else
+        pip install --quiet .
+    fi
 fi
 ok "Python package installed"
 echo ""

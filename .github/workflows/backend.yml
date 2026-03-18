@@ -12,41 +12,34 @@ permissions:
 
 jobs:
   lint-and-test:
-    name: Lint & Test (Python ${{ matrix.python-version }})
+    name: Lint & Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Verify ai-edge-litert runtime
-        run: python -c "from ai_edge_litert.interpreter import Interpreter, load_delegate; print('ai-edge-litert OK')"
+        run: uv run python -c "from ai_edge_litert.interpreter import Interpreter, load_delegate; print('ai-edge-litert OK')"
 
       - name: Lint with ruff
-        run: ruff check couch_hound/ tests/
+        run: uv run ruff check couch_hound/ tests/
 
       - name: Format check with ruff
-        run: ruff format --check couch_hound/ tests/
+        run: uv run ruff format --check couch_hound/ tests/
 
       - name: Type check with mypy
-        run: python -m mypy couch_hound/
+        run: uv run mypy couch_hound/
 
       - name: Run tests
-        run: pytest tests/ -v --cov=couch_hound --cov-report=term-missing --cov-report=xml:coverage.xml
+        run: uv run pytest tests/ -v --cov=couch_hound --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Coverage comment
         if: github.event_name == 'pull_request'

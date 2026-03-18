@@ -19,38 +19,38 @@ Pi Couch Hound — Raspberry Pi-powered dog detector that monitors a couch and t
 
 ### Backend
 
-This project requires Python >=3.12. Use the venv to ensure the correct version:
+This project requires Python 3.12 and uses [uv](https://docs.astral.sh/uv/) for dependency management:
 
 ```bash
-# Create venv (first time only)
-python3.12 -m venv .venv
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Activate venv
-source .venv/bin/activate
-
-# Install with dev dependencies
-pip install -e ".[dev]"
+# Install all dependencies (creates .venv automatically)
+uv sync --extra dev
 
 # Lint
-ruff check couch_hound/ tests/
+uv run ruff check couch_hound/ tests/
 
 # Format check
-ruff format --check couch_hound/ tests/
+uv run ruff format --check couch_hound/ tests/
 
 # Auto-format
-ruff format couch_hound/ tests/
+uv run ruff format couch_hound/ tests/
 
 # Type check
-mypy couch_hound/
+uv run mypy couch_hound/
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run tests with coverage
-pytest tests/ -v --cov=couch_hound --cov-report=term-missing
+uv run pytest tests/ -v --cov=couch_hound --cov-report=term-missing
 
 # Run dev server
-python -m uvicorn couch_hound.api.app:create_app --factory --port 8080 --reload
+uv run uvicorn couch_hound.api.app:create_app --factory --port 8080 --reload
+
+# Update lock file after changing dependencies in pyproject.toml
+uv lock
 ```
 
 ### Frontend
@@ -67,7 +67,7 @@ npm run build
 ## CI
 
 Two GitHub Actions workflows (`.github/workflows/`):
-- **backend.yml**: ruff check, ruff format --check, mypy, pytest with coverage (Python 3.12)
+- **backend.yml**: ruff check, ruff format --check, mypy, pytest with coverage (Python 3.12, uv)
 - **frontend.yml**: eslint, tsc, vitest, vite build (Node 20)
 
 Both trigger on pushes and PRs to main/master for their respective paths.
@@ -78,7 +78,7 @@ Both trigger on pushes and PRs to main/master for their respective paths.
 - Ruff for linting and formatting (rules: E, F, I, N, W, UP)
 - Mypy strict mode with pydantic plugin
 - pytest with asyncio_mode = "auto"
-- Always run `ruff check` and `ruff format --check` before committing
+- Always run `uv run ruff check` and `uv run ruff format --check` before committing
 
 ## Security Scanning
 

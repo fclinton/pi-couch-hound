@@ -23,17 +23,12 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install packaging
-        run: pip install packaging
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Validate version format and ordering
         run: |
-          python3 -c "
+          uv run --with packaging python3 -c "
           from packaging.version import Version, InvalidVersion
           import re, sys
 

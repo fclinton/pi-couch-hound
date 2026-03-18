@@ -197,16 +197,28 @@ class UpdateManager:
                     pass
 
             # Reinstall Python package
-            venv_python = sys.executable
-            await asyncio.to_thread(
-                subprocess.run,
-                [venv_python, "-m", "pip", "install", "--quiet", "."],
-                cwd=str(self._install_dir),
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=True,
-            )
+            uv_path = shutil.which("uv")
+            if uv_path:
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [uv_path, "sync", "--extra", "dev"],
+                    cwd=str(self._install_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=True,
+                )
+            else:
+                venv_python = sys.executable
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [venv_python, "-m", "pip", "install", "--quiet", "."],
+                    cwd=str(self._install_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=True,
+                )
             logger.info("Python package reinstalled")
 
             # Migrate config to pick up new fields / drop removed ones
