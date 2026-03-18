@@ -7,8 +7,14 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from couch_hound.api.schemas import EventListResponse, EventResponse, EventStatsResponse
+from couch_hound.api.schemas import (
+    EventListResponse,
+    EventResponse,
+    EventStatsResponse,
+    EventTrainingInfo,
+)
 from couch_hound.database import EventDatabase
+from couch_hound.training_db import TrainingDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +27,19 @@ def _get_db(request: Request) -> EventDatabase:
     if db is None:
         raise HTTPException(status_code=503, detail="Event database unavailable")
     return db
+
+
+def _get_training_db(request: Request) -> TrainingDatabase | None:
+    """Retrieve the training database from app state (may not be available)."""
+    return getattr(request.app.state, "training_db", None)
+
+
+def _make_training_info(sample: dict[str, object]) -> EventTrainingInfo:
+    return EventTrainingInfo(
+        sample_id=int(str(sample["id"])),
+        label=str(sample["label"]),
+        is_positive=bool(sample["is_positive"]),
+    )
 
 
 @router.get("/events/stats")
@@ -42,8 +61,21 @@ async def list_events(
     """Paginated event listing with optional timestamp filters."""
     db = _get_db(request)
     events, total = await db.list_events(limit=limit, offset=offset, since=since, until=until)
+
+    training_db = _get_training_db(request)
+    training_map: dict[int, dict[str, object]] = {}
+    if training_db is not None:
+        event_ids = [int(str(e["id"])) for e in events]
+        training_map = await training_db.get_samples_by_event_ids(event_ids)
+
+    response_events = []
+    for e in events:
+        eid = int(str(e["id"]))
+        training = _make_training_info(training_map[eid]) if eid in training_map else None
+        response_events.append(EventResponse(**e, training=training))
+
     return EventListResponse(
-        events=[EventResponse(**e) for e in events],
+        events=response_events,
         total=total,
         limit=limit,
         offset=offset,
@@ -57,7 +89,15 @@ async def get_event(event_id: int, request: Request) -> EventResponse:
     event = await db.get_event(event_id)
     if event is None:
         raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
-    return EventResponse(**event)
+
+    training: EventTrainingInfo | None = None
+    training_db = _get_training_db(request)
+    if training_db is not None:
+        sample = await training_db.get_sample_by_event_id(event_id)
+        if sample is not None:
+            training = _make_training_info(sample)
+
+    return EventResponse(**event, training=training)
 
 
 @router.delete("/events/{event_id}", status_code=204)
