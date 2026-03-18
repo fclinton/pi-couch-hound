@@ -16,9 +16,23 @@ from couch_hound.config import SslConfig
 
 logger = logging.getLogger(__name__)
 
-SELF_SIGNED_DIR = Path("certs")
+SELF_SIGNED_DIR = Path(__file__).resolve().parent.parent / "certs"
 SELF_SIGNED_CERT = SELF_SIGNED_DIR / "self-signed.pem"
 SELF_SIGNED_KEY = SELF_SIGNED_DIR / "self-signed-key.pem"
+
+_RENEWAL_THRESHOLD_DAYS = 7
+
+
+def _is_cert_expiring(cert_path: Path, threshold_days: int = _RENEWAL_THRESHOLD_DAYS) -> bool:
+    """Return True if the certificate is expired or expires within *threshold_days*."""
+    try:
+        pem_data = cert_path.read_bytes()
+        cert = x509.load_pem_x509_certificate(pem_data)
+        cutoff = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=threshold_days)
+        return cert.not_valid_after_utc <= cutoff
+    except Exception:
+        logger.warning("Could not read certificate %s, treating as expired", cert_path)
+        return True
 
 
 def _generate_self_signed(cert_path: Path, key_path: Path) -> None:
@@ -74,7 +88,7 @@ def ensure_ssl_files(
     cert_path = base / "self-signed.pem"
     key_path = base / "self-signed-key.pem"
 
-    if not cert_path.exists() or not key_path.exists():
+    if not cert_path.exists() or not key_path.exists() or _is_cert_expiring(cert_path):
         _generate_self_signed(cert_path, key_path)
 
     return str(cert_path), str(key_path)
