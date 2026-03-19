@@ -12,9 +12,17 @@ jobs:
   nightly:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Check for new commits since last nightly
         id: check
@@ -91,7 +99,7 @@ jobs:
           # Also ensure the remote tag is gone (in case release didn't exist but tag did)
           git push origin :"refs/tags/$TAG" 2>/dev/null || true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Create release tarball
         if: steps.check.outputs.has_new_commits == 'true'
