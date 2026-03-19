@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { useCreateSampleFromEvent } from "@/api/training";
+import { useCreateSampleFromEvent, useDeleteSample } from "@/api/training";
 import { useEvents } from "@/api/events";
 import type { DetectionEvent } from "@/api/types";
 
@@ -9,9 +9,11 @@ export default function SwipeLabeler() {
   const [labeledCount, setLabeledCount] = useState(0);
   const [skippedIds, setSkippedIds] = useState<Set<number>>(new Set());
   const [swipeDir, setSwipeDir] = useState<"left" | "right" | null>(null);
+  const [lastAction, setLastAction] = useState<{ sampleId: number; eventId: number } | null>(null);
 
   const { data, isLoading, refetch } = useEvents({ limit: 200 });
   const addToTraining = useCreateSampleFromEvent();
+  const deleteSample = useDeleteSample();
 
   const untrainedEvents: DetectionEvent[] =
     data?.events.filter(
@@ -31,7 +33,8 @@ export default function SwipeLabeler() {
       addToTraining.mutate(
         { eventId: currentEvent.id, is_positive: isPositive },
         {
-          onSuccess: () => {
+          onSuccess: (sample) => {
+            setLastAction({ sampleId: sample.id, eventId: currentEvent.id });
             setLabeledCount((c) => c + 1);
             refetch();
             setTimeout(() => setSwipeDir(null), 150);
@@ -45,6 +48,18 @@ export default function SwipeLabeler() {
     [currentEvent, addToTraining, refetch],
   );
 
+  const handleUndo = useCallback(() => {
+    if (!lastAction || deleteSample.isPending) return;
+
+    deleteSample.mutate(lastAction.sampleId, {
+      onSuccess: () => {
+        setLabeledCount((c) => Math.max(0, c - 1));
+        setLastAction(null);
+        refetch();
+      },
+    });
+  }, [lastAction, deleteSample, refetch]);
+
   const handleSkip = useCallback(() => {
     if (!currentEvent) return;
     setSkippedIds((prev) => new Set(prev).add(currentEvent.id));
@@ -57,10 +72,11 @@ export default function SwipeLabeler() {
       if (e.key === "ArrowLeft" || e.key === "a") handleLabel(false);
       else if (e.key === "ArrowRight" || e.key === "d") handleLabel(true);
       else if (e.key === "ArrowDown" || e.key === "s") handleSkip();
+      else if (e.key === "z" || (e.key === "z" && (e.ctrlKey || e.metaKey))) handleUndo();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleLabel, handleSkip]);
+  }, [handleLabel, handleSkip, handleUndo]);
 
   if (isLoading) {
     return <p className="text-sm text-gray-500">Loading events...</p>;
@@ -114,6 +130,31 @@ export default function SwipeLabeler() {
           />
         </div>
       </div>
+
+      {/* Undo button */}
+      {lastAction && (
+        <div className="flex justify-center">
+          <button
+            onClick={handleUndo}
+            disabled={deleteSample.isPending}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-3.5 w-3.5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M7.793 2.232a.75.75 0 01-.025 1.06L3.622 7.25h10.003a5.375 5.375 0 010 10.75H10.75a.75.75 0 010-1.5h2.875a3.875 3.875 0 000-7.75H3.622l4.146 3.957a.75.75 0 01-1.036 1.085l-5.5-5.25a.75.75 0 010-1.085l5.5-5.25a.75.75 0 011.06.025z"
+                clipRule="evenodd"
+              />
+            </svg>
+            {deleteSample.isPending ? "Undoing..." : "Undo last label"}
+          </button>
+        </div>
+      )}
 
       {/* Card */}
       {currentEvent && (
@@ -227,7 +268,11 @@ export default function SwipeLabeler() {
         <kbd className="rounded border border-gray-300 px-1.5 py-0.5 font-mono text-gray-600">
           &rarr;
         </kbd>{" "}
-        positive
+        positive &middot;{" "}
+        <kbd className="rounded border border-gray-300 px-1.5 py-0.5 font-mono text-gray-600">
+          Z
+        </kbd>{" "}
+        undo
       </p>
     </div>
   );
