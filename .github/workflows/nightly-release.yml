@@ -12,9 +12,17 @@ jobs:
   nightly:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Check for new commits since last nightly
         id: check
@@ -82,15 +90,16 @@ jobs:
           echo "tag=nightly-${DATE}" >> "$GITHUB_OUTPUT"
           echo "name=${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Delete previous nightly tag if same date
+      - name: Delete previous nightly release if same date
         if: steps.check.outputs.has_new_commits == 'true'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes --cleanup-tag || true
-          fi
+          # Delete the release and its tag if they exist
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          # Also ensure the remote tag is gone (in case release didn't exist but tag did)
+          git push origin :"refs/tags/$TAG" 2>/dev/null || true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Create release tarball
         if: steps.check.outputs.has_new_commits == 'true'
@@ -113,6 +122,13 @@ jobs:
 
           cd /tmp && tar -czf "${RELEASE_DIR}.tar.gz" "${RELEASE_DIR}"
           echo "TARBALL=/tmp/${RELEASE_DIR}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Create and push nightly tag
+        if: steps.check.outputs.has_new_commits == 'true'
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git tag "$TAG" HEAD
+          git push origin "$TAG"
 
       - name: Create GitHub Release
         if: steps.check.outputs.has_new_commits == 'true'
