@@ -10,10 +10,18 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from couch_hound.actions import create_action
 from couch_hound.api.schemas import ActionTestResponse, ActionToggleResponse
 from couch_hound.config import ActionConfig, AppConfig, save_config
+from couch_hound.pipeline import DetectionPipeline
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["actions"])
+
+
+def _reload_actions(request: Request) -> None:
+    """Update pipeline config and rebuild action instances."""
+    pipeline: DetectionPipeline = request.app.state.pipeline
+    pipeline.update_config(request.app.state.config)
+    pipeline.rebuild_actions()
 
 
 def _find_action(config: AppConfig, name: str) -> tuple[int, ActionConfig]:
@@ -44,6 +52,7 @@ async def create_action_endpoint(action: ActionConfig, request: Request) -> dict
     config.actions.append(action)
     save_config(config, request.app.state.config_path)
     request.app.state.config = config
+    _reload_actions(request)
     logger.info("Action '%s' created", action.name)
     return action.model_dump(mode="json")
 
@@ -64,6 +73,7 @@ async def update_action(name: str, action: ActionConfig, request: Request) -> di
     config.actions[idx] = action
     save_config(config, request.app.state.config_path)
     request.app.state.config = config
+    _reload_actions(request)
     logger.info("Action '%s' updated", name)
     return action.model_dump(mode="json")
 
@@ -76,6 +86,7 @@ async def delete_action(name: str, request: Request) -> Response:
     config.actions.pop(idx)
     save_config(config, request.app.state.config_path)
     request.app.state.config = config
+    _reload_actions(request)
     logger.info("Action '%s' deleted", name)
     return Response(status_code=204)
 
@@ -103,5 +114,6 @@ async def toggle_action(name: str, request: Request) -> ActionToggleResponse:
     config.actions[idx] = action.model_copy(update={"enabled": not action.enabled})
     save_config(config, request.app.state.config_path)
     request.app.state.config = config
+    _reload_actions(request)
     logger.info("Action '%s' toggled to enabled=%s", name, config.actions[idx].enabled)
     return ActionToggleResponse(name=name, enabled=config.actions[idx].enabled)

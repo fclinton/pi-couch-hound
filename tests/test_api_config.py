@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,11 +14,15 @@ from couch_hound.config import AppConfig
 
 @pytest.fixture
 def config_client(tmp_path: Path) -> TestClient:
-    """Return a test client with a writable config file."""
+    """Return a test client with a writable config file and a mocked pipeline."""
     app = create_app()
     with TestClient(app) as client:
         # Point config_path to a temp file so writes don't touch the real config
         app.state.config_path = tmp_path / "config.yaml"
+        # Mock the pipeline so we can verify reload calls
+        mock_pipeline = MagicMock()
+        mock_pipeline.restart = AsyncMock()
+        app.state.pipeline = mock_pipeline
         yield client
 
 
@@ -164,3 +168,70 @@ def test_put_config_no_ssl_change_no_restart(mock_restart, config_client: TestCl
     data = response.json()
     assert "_restart" not in data
     mock_restart.assert_not_called()
+
+
+# ── Pipeline reload tests ──
+
+
+def test_patch_camera_triggers_pipeline_restart(config_client: TestClient):
+    """PATCH camera section should trigger a full pipeline restart."""
+    response = config_client.patch("/api/config/camera", json={"capture_interval": 2.0})
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.restart.assert_awaited()
+
+
+def test_patch_detection_triggers_pipeline_restart(config_client: TestClient):
+    """PATCH detection section should trigger a full pipeline restart."""
+    response = config_client.patch("/api/config/detection", json={"confidence_threshold": 0.8})
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.restart.assert_awaited()
+
+
+def test_patch_cooldown_hot_updates_only(config_client: TestClient):
+    """PATCH cooldown should hot-update the pipeline, not restart it."""
+    response = config_client.patch("/api/config/cooldown", json={"seconds": 60})
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.restart.assert_not_awaited()
+    pipeline.rebuild_actions.assert_not_called()
+
+
+def test_patch_actions_rebuilds_actions(config_client: TestClient):
+    """PATCH actions section should rebuild pipeline actions."""
+    actions = {
+        "actions": [
+            {"name": "test_action", "type": "sound", "enabled": True, "sound_file": "woof.wav"}
+        ]
+    }
+    response = config_client.patch("/api/config/actions", json=actions)
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.rebuild_actions.assert_called()
+    pipeline.restart.assert_not_awaited()
+
+
+def test_put_config_with_detection_change_triggers_restart(config_client: TestClient):
+    """PUT /api/config with detection changes should trigger pipeline restart."""
+    cfg = AppConfig()
+    cfg.detection.confidence_threshold = 0.9
+
+    response = config_client.put("/api/config", json=cfg.model_dump(mode="json"))
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.restart.assert_awaited()
+
+
+def test_put_config_no_changes_skips_pipeline_notify(config_client: TestClient):
+    """PUT /api/config with identical config should not notify the pipeline."""
+    cfg = config_client.app.state.config  # type: ignore[union-attr]
+    response = config_client.put("/api/config", json=cfg.model_dump(mode="json"))
+    assert response.status_code == 200
+    pipeline = config_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_not_called()
