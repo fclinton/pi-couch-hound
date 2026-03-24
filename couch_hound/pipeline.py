@@ -176,6 +176,12 @@ class DetectionPipeline:
         self._monitoring_enabled = config.monitoring.enabled
         self._cooldown.update_config(config.cooldown)
         self._escalation.update_config(config.escalation)
+        logger.info("Pipeline config hot-reloaded")
+
+    def rebuild_actions(self) -> None:
+        """Rebuild action instances from current config (no camera/model restart)."""
+        self._actions = self._build_actions()
+        logger.info("Pipeline actions rebuilt: %d active", len(self._actions))
 
     async def _run(self) -> None:
         """Launch detection and stream loops, auto-restarting on failure."""

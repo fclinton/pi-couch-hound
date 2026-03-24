@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from couch_hound.api.app import create_app
 from couch_hound.config import ActionConfig, AppConfig
+
+
+def _mock_pipeline() -> MagicMock:
+    """Create a mock pipeline for testing action reload calls."""
+    mock = MagicMock()
+    return mock
 
 
 @pytest.fixture
@@ -24,6 +31,7 @@ def actions_client(tmp_path: Path) -> Generator[TestClient, None, None]:
                 ActionConfig(name="save_snap", type="snapshot", enabled=True, save_dir="snaps/"),
             ]
         )
+        app.state.pipeline = _mock_pipeline()
         yield client
 
 
@@ -34,6 +42,7 @@ def empty_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     with TestClient(app) as client:
         app.state.config_path = tmp_path / "config.yaml"
         app.state.config = AppConfig(actions=[])
+        app.state.pipeline = _mock_pipeline()
         yield client
 
 
@@ -200,3 +209,52 @@ def test_create_action_persists_to_disk(actions_client: TestClient, tmp_path: Pa
     assert config_file.exists()
     content = config_file.read_text()
     assert "persist_test" in content
+
+
+# ── Pipeline reload tests ──
+
+
+def test_create_action_rebuilds_pipeline(actions_client: TestClient) -> None:
+    """Creating an action should rebuild pipeline actions."""
+    new_action = {"name": "http_notify", "type": "http", "url": "https://example.com/hook"}
+    response = actions_client.post("/api/actions", json=new_action)
+    assert response.status_code == 201
+    pipeline = actions_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.rebuild_actions.assert_called()
+
+
+def test_update_action_rebuilds_pipeline(actions_client: TestClient) -> None:
+    """Updating an action should rebuild pipeline actions."""
+    updated = {"name": "bark_alarm", "type": "sound", "sound_file": "new_bark.wav"}
+    response = actions_client.put("/api/actions/bark_alarm", json=updated)
+    assert response.status_code == 200
+    pipeline = actions_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.rebuild_actions.assert_called()
+
+
+def test_delete_action_rebuilds_pipeline(actions_client: TestClient) -> None:
+    """Deleting an action should rebuild pipeline actions."""
+    response = actions_client.delete("/api/actions/bark_alarm")
+    assert response.status_code == 204
+    pipeline = actions_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.rebuild_actions.assert_called()
+
+
+def test_toggle_action_rebuilds_pipeline(actions_client: TestClient) -> None:
+    """Toggling an action should rebuild pipeline actions."""
+    response = actions_client.patch("/api/actions/bark_alarm/toggle")
+    assert response.status_code == 200
+    pipeline = actions_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.update_config.assert_called()
+    pipeline.rebuild_actions.assert_called()
+
+
+def test_test_fire_does_not_rebuild_pipeline(actions_client: TestClient) -> None:
+    """Test-firing an action should NOT rebuild pipeline actions."""
+    response = actions_client.post("/api/actions/bark_alarm/test")
+    assert response.status_code == 200
+    pipeline = actions_client.app.state.pipeline  # type: ignore[union-attr]
+    pipeline.rebuild_actions.assert_not_called()
