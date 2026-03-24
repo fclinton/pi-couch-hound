@@ -11,6 +11,8 @@ on:
 jobs:
   bump-and-tag:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Generate GitHub App token
         id: app-token
