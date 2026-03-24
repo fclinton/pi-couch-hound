@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
 jobs:
   nightly:
     runs-on: ubuntu-latest
