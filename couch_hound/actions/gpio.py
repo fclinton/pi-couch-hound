@@ -44,11 +44,22 @@ class GpioAction(BaseAction):
 
     @staticmethod
     def _drive_pin(pin: int, mode: str, duration: float) -> None:
-        """Dispatch to the available GPIO backend."""
+        """Dispatch to the available GPIO backend.
+
+        Tries gpiozero first.  If it fails at the hardware level (e.g. wrong
+        pin factory on an RPi 5 without lgpio), falls back to RPi.GPIO.
+        """
         if _DigitalOutputDevice is not None:
-            GpioAction._drive_pin_gpiozero(pin, mode, duration)
-        else:
+            try:
+                GpioAction._drive_pin_gpiozero(pin, mode, duration)
+                return
+            except RuntimeError:
+                if _GPIO is None:
+                    raise
+        if _GPIO is not None:
             GpioAction._drive_pin_rpigpio(pin, mode, duration)
+        else:
+            raise RuntimeError("No working GPIO backend available")
 
     @staticmethod
     def _drive_pin_gpiozero(pin: int, mode: str, duration: float) -> None:
