@@ -1,4 +1,8 @@
-"""GPIO action — drives a Raspberry Pi GPIO pin."""
+"""GPIO action — drives a Raspberry Pi GPIO pin.
+
+Prefers gpiozero (works on RPi 5 and older models).  Falls back to RPi.GPIO
+for legacy setups.  Raises at runtime if neither library is installed.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,11 @@ import time
 from typing import Any
 
 from couch_hound.actions.base import BaseAction
+
+try:
+    from gpiozero import DigitalOutputDevice as _DigitalOutputDevice
+except ImportError:
+    _DigitalOutputDevice = None
 
 try:
     import RPi.GPIO as _GPIO  # type: ignore[import-untyped]
@@ -19,8 +28,10 @@ class GpioAction(BaseAction):
 
     async def execute(self, context: dict[str, Any]) -> None:
         """Drive the configured GPIO pin."""
-        if _GPIO is None:
-            raise RuntimeError("RPi.GPIO is not available (not running on a Raspberry Pi?)")
+        if _DigitalOutputDevice is None and _GPIO is None:
+            raise RuntimeError(
+                "Neither gpiozero nor RPi.GPIO is available (not running on a Raspberry Pi?)"
+            )
 
         pin = self.config.pin
         if pin is None:
@@ -33,7 +44,34 @@ class GpioAction(BaseAction):
 
     @staticmethod
     def _drive_pin(pin: int, mode: str, duration: float) -> None:
-        """Blocking GPIO pin control."""
+        """Dispatch to the available GPIO backend."""
+        if _DigitalOutputDevice is not None:
+            GpioAction._drive_pin_gpiozero(pin, mode, duration)
+        else:
+            GpioAction._drive_pin_rpigpio(pin, mode, duration)
+
+    @staticmethod
+    def _drive_pin_gpiozero(pin: int, mode: str, duration: float) -> None:
+        """Drive a pin using gpiozero."""
+        assert _DigitalOutputDevice is not None
+        dev = _DigitalOutputDevice(pin)
+        try:
+            if mode in ("pulse", "momentary"):
+                dev.on()
+                time.sleep(duration)
+                dev.off()
+            elif mode == "toggle":
+                dev.toggle()
+            else:
+                raise RuntimeError(f"Unknown GPIO mode: {mode}")
+        finally:
+            if mode in ("pulse", "momentary"):
+                dev.off()
+            dev.close()
+
+    @staticmethod
+    def _drive_pin_rpigpio(pin: int, mode: str, duration: float) -> None:
+        """Drive a pin using RPi.GPIO (legacy fallback)."""
         assert _GPIO is not None
         _GPIO.setmode(_GPIO.BCM)
         _GPIO.setup(pin, _GPIO.OUT)

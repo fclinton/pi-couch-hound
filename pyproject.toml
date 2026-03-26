@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpio = ["RPi.GPIO>=0.7.0"]
+gpio = ["gpiozero>=2.0", "RPi.GPIO>=0.7.0"]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -69,6 +69,7 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = [
     "uvicorn",
+    "gpiozero.*",
     "pygame.*",
     "pychromecast.*",
     "zeroconf.*",
