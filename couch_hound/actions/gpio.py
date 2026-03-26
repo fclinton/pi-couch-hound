@@ -40,7 +40,15 @@ class GpioAction(BaseAction):
     def _drive_pin(pin: int, mode: str, duration: float) -> None:
         """Drive the configured GPIO pin using gpiozero."""
         assert _DigitalOutputDevice is not None
-        dev = _DigitalOutputDevice(pin)
+        try:
+            dev = _DigitalOutputDevice(pin)
+        except Exception as exc:
+            if "BadPinFactory" in type(exc).__name__ or "pin factory" in str(exc).lower():
+                raise RuntimeError(
+                    "gpiozero has no working pin factory — "
+                    "install lgpio: pip install 'pi-couch-hound[gpio]'"
+                ) from exc
+            raise
         try:
             if mode in ("pulse", "momentary"):
                 dev.on()

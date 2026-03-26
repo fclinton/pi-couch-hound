@@ -106,3 +106,16 @@ async def test_gpio_drive_pin_unknown_mode() -> None:
             gpio_mod.GpioAction._drive_pin(17, "bad", 1.0)
 
     mock_dev.close.assert_called_once()
+
+
+async def test_gpio_bad_pin_factory() -> None:
+    """Clear error when gpiozero has no working pin factory (lgpio missing)."""
+
+    class _BadPinFactoryError(Exception):  # noqa: N818
+        pass
+
+    mock_cls = MagicMock(side_effect=_BadPinFactoryError("Unable to load any default pin factory!"))
+
+    with patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls):
+        with pytest.raises(RuntimeError, match="no working pin factory"):
+            gpio_mod.GpioAction._drive_pin(17, "pulse", 1.0)
