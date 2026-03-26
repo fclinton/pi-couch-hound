@@ -142,6 +142,39 @@ async def test_gpio_drive_pin_gpiozero_toggle() -> None:
     mock_dev.close.assert_called_once()
 
 
+async def test_gpio_gpiozero_fallback_to_rpigpio() -> None:
+    """When gpiozero raises RuntimeError, fall back to RPi.GPIO."""
+    mock_cls = MagicMock(side_effect=RuntimeError("Cannot determine SOC peripheral base address"))
+    mock_gpio = MagicMock()
+    mock_gpio.BCM = 11
+    mock_gpio.OUT = 0
+    mock_gpio.input.return_value = 0
+
+    with (
+        patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls),
+        patch.object(gpio_mod, "_GPIO", new=mock_gpio),
+    ):
+        gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
+
+    # gpiozero was attempted
+    mock_cls.assert_called_once_with(17)
+    # RPi.GPIO was used as fallback
+    mock_gpio.setmode.assert_called_once_with(11)
+    mock_gpio.output.assert_any_call(17, True)
+
+
+async def test_gpio_gpiozero_fails_no_fallback() -> None:
+    """When gpiozero fails and RPi.GPIO is unavailable, error is raised."""
+    mock_cls = MagicMock(side_effect=RuntimeError("Cannot determine SOC peripheral base address"))
+
+    with (
+        patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls),
+        patch.object(gpio_mod, "_GPIO", new=None),
+    ):
+        with pytest.raises(RuntimeError, match="Cannot determine SOC"):
+            gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
+
+
 async def test_gpio_prefers_gpiozero() -> None:
     """When both libraries are available, gpiozero is used."""
     mock_dev = MagicMock()

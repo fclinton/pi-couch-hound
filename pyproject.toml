@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpio = ["gpiozero>=2.0", "RPi.GPIO>=0.7.0"]
+gpio = ["gpiozero>=2.0", "lgpio>=0.2", "RPi.GPIO>=0.7.0"]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
