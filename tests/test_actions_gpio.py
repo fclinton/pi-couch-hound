@@ -42,15 +42,12 @@ async def test_gpio_toggle_mode() -> None:
 
 
 async def test_gpio_not_available() -> None:
-    """Error when neither library is installed."""
+    """Error when gpiozero is not installed."""
     config = _make_config(pin=17, mode="pulse")
     action = gpio_mod.GpioAction(config)
 
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=None),
-        patch.object(gpio_mod, "_GPIO", new=None),
-    ):
-        with pytest.raises(RuntimeError, match="Neither gpiozero nor RPi.GPIO"):
+    with patch.object(gpio_mod, "_DigitalOutputDevice", new=None):
+        with pytest.raises(RuntimeError, match="gpiozero is not available"):
             await action.execute({})
 
 
@@ -64,55 +61,12 @@ async def test_gpio_no_pin_configured() -> None:
 
 
 # ---------------------------------------------------------------------------
-# RPi.GPIO backend – _drive_pin_rpigpio
+# _drive_pin – gpiozero backend
 # ---------------------------------------------------------------------------
 
 
-async def test_gpio_drive_pin_rpigpio_pulse() -> None:
-    """Unit test _drive_pin_rpigpio in pulse mode."""
-    mock_gpio = MagicMock()
-    mock_gpio.BCM = 11
-    mock_gpio.OUT = 0
-    mock_gpio.HIGH = 1
-    mock_gpio.LOW = 0
-
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=None),
-        patch.object(gpio_mod, "_GPIO", new=mock_gpio),
-        patch("time.sleep"),
-    ):
-        gpio_mod.GpioAction._drive_pin(17, "pulse", 2.0)
-
-    mock_gpio.setmode.assert_called_once_with(11)
-    mock_gpio.setup.assert_called_once_with(17, 0)
-    mock_gpio.output.assert_any_call(17, 1)
-    mock_gpio.output.assert_any_call(17, 0)
-
-
-async def test_gpio_drive_pin_rpigpio_toggle() -> None:
-    """Unit test _drive_pin_rpigpio in toggle mode."""
-    mock_gpio = MagicMock()
-    mock_gpio.BCM = 11
-    mock_gpio.OUT = 0
-    mock_gpio.input.return_value = 0
-
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=None),
-        patch.object(gpio_mod, "_GPIO", new=mock_gpio),
-    ):
-        gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
-
-    mock_gpio.input.assert_called_once_with(17)
-    mock_gpio.output.assert_any_call(17, True)
-
-
-# ---------------------------------------------------------------------------
-# gpiozero backend – _drive_pin_gpiozero
-# ---------------------------------------------------------------------------
-
-
-async def test_gpio_drive_pin_gpiozero_pulse() -> None:
-    """Unit test _drive_pin_gpiozero in pulse mode."""
+async def test_gpio_drive_pin_pulse() -> None:
+    """Pulse mode: on, sleep, off, close."""
     mock_dev = MagicMock()
     mock_cls = MagicMock(return_value=mock_dev)
 
@@ -129,8 +83,8 @@ async def test_gpio_drive_pin_gpiozero_pulse() -> None:
     mock_dev.close.assert_called_once()
 
 
-async def test_gpio_drive_pin_gpiozero_toggle() -> None:
-    """Unit test _drive_pin_gpiozero in toggle mode."""
+async def test_gpio_drive_pin_toggle() -> None:
+    """Toggle mode: toggle, close."""
     mock_dev = MagicMock()
     mock_cls = MagicMock(return_value=mock_dev)
 
@@ -142,52 +96,13 @@ async def test_gpio_drive_pin_gpiozero_toggle() -> None:
     mock_dev.close.assert_called_once()
 
 
-async def test_gpio_gpiozero_fallback_to_rpigpio() -> None:
-    """When gpiozero raises RuntimeError, fall back to RPi.GPIO."""
-    mock_cls = MagicMock(side_effect=RuntimeError("Cannot determine SOC peripheral base address"))
-    mock_gpio = MagicMock()
-    mock_gpio.BCM = 11
-    mock_gpio.OUT = 0
-    mock_gpio.input.return_value = 0
-
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls),
-        patch.object(gpio_mod, "_GPIO", new=mock_gpio),
-    ):
-        gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
-
-    # gpiozero was attempted
-    mock_cls.assert_called_once_with(17)
-    # RPi.GPIO was used as fallback
-    mock_gpio.setmode.assert_called_once_with(11)
-    mock_gpio.output.assert_any_call(17, True)
-
-
-async def test_gpio_gpiozero_fails_no_fallback() -> None:
-    """When gpiozero fails and RPi.GPIO is unavailable, error is raised."""
-    mock_cls = MagicMock(side_effect=RuntimeError("Cannot determine SOC peripheral base address"))
-
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls),
-        patch.object(gpio_mod, "_GPIO", new=None),
-    ):
-        with pytest.raises(RuntimeError, match="Cannot determine SOC"):
-            gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
-
-
-async def test_gpio_prefers_gpiozero() -> None:
-    """When both libraries are available, gpiozero is used."""
+async def test_gpio_drive_pin_unknown_mode() -> None:
+    """Unknown mode raises RuntimeError and still closes the device."""
     mock_dev = MagicMock()
     mock_cls = MagicMock(return_value=mock_dev)
-    mock_gpio = MagicMock()
 
-    with (
-        patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls),
-        patch.object(gpio_mod, "_GPIO", new=mock_gpio),
-    ):
-        gpio_mod.GpioAction._drive_pin(17, "toggle", 1.0)
+    with patch.object(gpio_mod, "_DigitalOutputDevice", new=mock_cls):
+        with pytest.raises(RuntimeError, match="Unknown GPIO mode"):
+            gpio_mod.GpioAction._drive_pin(17, "bad", 1.0)
 
-    # gpiozero was used
-    mock_cls.assert_called_once_with(17)
-    # RPi.GPIO was NOT used
-    mock_gpio.setmode.assert_not_called()
+    mock_dev.close.assert_called_once()
