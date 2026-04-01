@@ -68,6 +68,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pipeline.set_connection_manager(ws_manager)
     if event_db is not None:
         pipeline.set_event_db(event_db)
+    if training_db is not None:
+        pipeline.set_training_db(training_db)
     app.state.pipeline = pipeline
     await pipeline.start()
 

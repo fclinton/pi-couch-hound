@@ -35,6 +35,15 @@ class Detection:
 
 
 @dataclass
+class SnakeTile:
+    """A single tile crop from snake detection, with its inference results."""
+
+    image: npt.NDArray[Any]  # the raw tile crop (numpy array)
+    detections: list[Detection]  # detections found in this tile (may be empty)
+    tile_bbox: list[float]  # full-frame normalised [x1, y1, x2, y2]
+
+
+@dataclass
 class SnakeDebugInfo:
     """Debug visualisation data from a snake_detect pass."""
 
@@ -43,6 +52,7 @@ class SnakeDebugInfo:
     contour_points: list[list[list[int]]]  # raw contour point arrays (pixel coords)
     crop_offset: tuple[int, int] = (0, 0)  # (x, y) pixel offset of anchor crop
     crop_size: tuple[int, int] = (0, 0)  # (w, h) pixel size of anchor crop
+    tiles: list[SnakeTile] = field(default_factory=list)  # populated when return_tiles=True
 
 
 class Detector:
@@ -207,6 +217,7 @@ class Detector:
         confidence_threshold: float | None = None,
         min_contour_area: int = 800,
         contour_padding: float = 0.25,
+        return_tiles: bool = False,
     ) -> tuple[list[Detection], SnakeDebugInfo | None]:
         """Detect objects by snaking contour regions within an anchor bbox.
 
@@ -252,6 +263,7 @@ class Detector:
         threshold = confidence_threshold or self._config.confidence_threshold
         all_detections: list[Detection] = []
         tile_bboxes: list[list[float]] = []
+        snake_tiles: list[SnakeTile] = []
 
         for rx, ry, rw, rh in regions:
             tile = anchor_crop[ry : ry + rh, rx : rx + rw]
@@ -259,14 +271,13 @@ class Detector:
                 continue
 
             # Record tile bbox in full-frame normalised coords for debug
-            tile_bboxes.append(
-                [
-                    (crop_x1 + rx) / fw,
-                    (crop_y1 + ry) / fh,
-                    (crop_x1 + rx + rw) / fw,
-                    (crop_y1 + ry + rh) / fh,
-                ]
-            )
+            tile_bbox = [
+                (crop_x1 + rx) / fw,
+                (crop_y1 + ry) / fh,
+                (crop_x1 + rx + rw) / fw,
+                (crop_y1 + ry + rh) / fh,
+            ]
+            tile_bboxes.append(tile_bbox)
 
             detections = self.detect_with_threshold(tile, threshold)
 
@@ -286,6 +297,11 @@ class Detector:
                 ]
                 all_detections.append(det)
 
+            if return_tiles:
+                snake_tiles.append(
+                    SnakeTile(image=tile, detections=detections, tile_bbox=tile_bbox)
+                )
+
         # Build debug info
         contour_pts: list[list[list[int]]] = []
         if not fallback:
@@ -298,6 +314,7 @@ class Detector:
             contour_points=contour_pts,
             crop_offset=(crop_x1, crop_y1),
             crop_size=(crop_x2 - crop_x1, crop_y2 - crop_y1),
+            tiles=snake_tiles,
         )
 
         return _nms(all_detections, iou_threshold=0.45), debug_info

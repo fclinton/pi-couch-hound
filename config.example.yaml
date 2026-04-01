@@ -27,6 +27,12 @@ detection:
     min_contour_area: 800          # ignore contours smaller than this (pixels²)
     contour_padding: 0.25          # pad each contour box by 25% for context
     debug_overlay: false           # draw contours + tiles on live stream
+    crop_capture:
+      enabled: false               # save tile crops for model training
+      save_dir: data/training_crops
+      max_crops: 5000              # auto-prune oldest when exceeded
+      min_interval_secs: 2.0       # minimum seconds between capture batches
+      capture_negatives: false     # also save tiles with no detections
 
 # ── Cooldown ────────────────────────────────────────
 cooldown:
