@@ -28,6 +28,14 @@ class RoiConfig(BaseModel):
     min_overlap: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
+class CropCaptureConfig(BaseModel):
+    enabled: bool = False
+    save_dir: str = "data/training_crops"
+    max_crops: int = Field(default=5000, ge=100, le=50000)
+    min_interval_secs: float = Field(default=2.0, ge=0.5, le=60.0)
+    capture_negatives: bool = False
+
+
 class TwoStageConfig(BaseModel):
     enabled: bool = False
     anchor_label: str = "couch"
@@ -37,6 +45,7 @@ class TwoStageConfig(BaseModel):
     min_contour_area: int = Field(default=800, ge=100, le=50000)
     contour_padding: float = Field(default=0.25, ge=0.0, le=1.0)
     debug_overlay: bool = False
+    crop_capture: CropCaptureConfig = Field(default_factory=CropCaptureConfig)
 
 
 class DetectionConfig(BaseModel):

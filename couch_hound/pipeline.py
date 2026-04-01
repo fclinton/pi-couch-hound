@@ -17,7 +17,8 @@ from couch_hound.actions.base import BaseAction
 from couch_hound.camera import Camera
 from couch_hound.config import AppConfig, TwoStageConfig
 from couch_hound.cooldown import CooldownManager
-from couch_hound.detector import Detection, Detector, SnakeDebugInfo
+from couch_hound.crop_capture import CropCapture
+from couch_hound.detector import Detection, Detector, SnakeDebugInfo, SnakeTile
 from couch_hound.escalation import EscalationManager
 from couch_hound.roi import bbox_in_roi
 from couch_hound.templates import build_context
@@ -25,6 +26,7 @@ from couch_hound.templates import build_context
 if TYPE_CHECKING:
     from couch_hound.api.websocket import ConnectionManager
     from couch_hound.database import EventDatabase
+    from couch_hound.training_db import TrainingDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,8 @@ class DetectionPipeline:
         self._monitoring_enabled: bool = config.monitoring.enabled
         self._connection_manager: ConnectionManager | None = None
         self._event_db: EventDatabase | None = None
+        self._training_db: TrainingDatabase | None = None
+        self._crop_capture: CropCapture | None = self._build_crop_capture()
         self._last_detections: list[Detection] = []
         self._last_debug_info: SnakeDebugInfo | None = None
         self._last_frame: npt.NDArray[Any] | None = None
@@ -131,6 +135,7 @@ class DetectionPipeline:
             self._cooldown = CooldownManager(self._config.cooldown)
             self._escalation = EscalationManager(self._config.escalation)
             self._actions = self._build_actions()
+            self._crop_capture = self._build_crop_capture()
 
             await asyncio.to_thread(self._camera.open)
             await asyncio.to_thread(self._detector.load)
@@ -170,12 +175,24 @@ class DetectionPipeline:
         """Attach an EventDatabase for persisting detection events."""
         self._event_db = db
 
+    def set_training_db(self, db: TrainingDatabase) -> None:
+        """Attach a TrainingDatabase for auto-captured crop samples."""
+        self._training_db = db
+
+    def _build_crop_capture(self) -> CropCapture | None:
+        """Create a CropCapture instance if crop capture is enabled."""
+        cfg = self._config.detection.two_stage.crop_capture
+        if cfg.enabled:
+            return CropCapture(cfg)
+        return None
+
     def update_config(self, config: AppConfig) -> None:
         """Hot-update config for next loop iteration."""
         self._config = config
         self._monitoring_enabled = config.monitoring.enabled
         self._cooldown.update_config(config.cooldown)
         self._escalation.update_config(config.escalation)
+        self._crop_capture = self._build_crop_capture()
         logger.info("Pipeline config hot-reloaded")
 
     def rebuild_actions(self) -> None:
@@ -279,6 +296,7 @@ class DetectionPipeline:
         # Stage 2: Snake each anchor region
         all_detections: list[Detection] = list(scene_detections)
         last_debug: SnakeDebugInfo | None = None
+        capture = self._crop_capture
 
         for anchor in anchors:
             snake_detections, debug_info = await asyncio.to_thread(
@@ -289,6 +307,7 @@ class DetectionPipeline:
                 two_stage_cfg.second_stage_confidence,
                 two_stage_cfg.min_contour_area,
                 two_stage_cfg.contour_padding,
+                capture is not None,  # return_tiles
             )
             last_debug = debug_info
             for det in snake_detections:
@@ -296,6 +315,11 @@ class DetectionPipeline:
                 if det.label == two_stage_cfg.anchor_label:
                     continue
                 all_detections.append(det)
+
+            # Save tile crops for training if enabled and rate limit allows
+            if capture is not None and debug_info is not None and debug_info.tiles:
+                if capture.should_capture():
+                    await self._save_crop_tiles(capture, debug_info.tiles)
 
         # Cache debug info for the stream overlay
         self._last_debug_info = last_debug if two_stage_cfg.debug_overlay else None
@@ -306,6 +330,50 @@ class DetectionPipeline:
             len(all_detections),
         )
         return all_detections
+
+    async def _save_crop_tiles(self, capture: CropCapture, tiles: list[SnakeTile]) -> None:
+        """Save tile crops to disk and optionally insert into training DB."""
+        cfg = capture.config
+        for snake_tile in tiles:
+            if snake_tile.detections:
+                for det in snake_tile.detections:
+                    path = await asyncio.to_thread(
+                        capture.save_tile,
+                        snake_tile.image,
+                        det.label,
+                        True,
+                        det.confidence,
+                    )
+                    if self._training_db is not None:
+                        try:
+                            await self._training_db.insert_sample(
+                                image_path=str(path),
+                                label=det.label,
+                                is_positive=True,
+                                bbox=det.bbox,
+                                confidence=det.confidence,
+                                source="crop_capture",
+                            )
+                        except Exception:
+                            logger.exception("Failed to insert crop sample")
+            elif cfg.capture_negatives:
+                path = await asyncio.to_thread(
+                    capture.save_tile,
+                    snake_tile.image,
+                    "background",
+                    False,
+                    None,
+                )
+                if self._training_db is not None:
+                    try:
+                        await self._training_db.insert_sample(
+                            image_path=str(path),
+                            label="background",
+                            is_positive=False,
+                            source="crop_capture",
+                        )
+                    except Exception:
+                        logger.exception("Failed to insert negative crop sample")
 
     async def _detection_loop(self) -> None:
         """Core detection loop: grab frame, detect, filter, dispatch."""
