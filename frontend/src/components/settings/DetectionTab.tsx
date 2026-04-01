@@ -1,11 +1,19 @@
 import { useState } from "react";
 import { useUpdateConfigSection } from "@/api/config";
-import type { AppConfig, TwoStageConfig } from "@/api/types";
+import type { AppConfig, CropCaptureConfig, TwoStageConfig } from "@/api/types";
 import { NumberInput, SliderInput, TextInput, Toggle, SaveBar } from "./FormFields";
 
 interface Props {
   config: AppConfig;
 }
+
+const defaultCropCapture: CropCaptureConfig = {
+  enabled: false,
+  save_dir: "data/training_crops",
+  max_crops: 5000,
+  min_interval_secs: 2.0,
+  capture_negatives: false,
+};
 
 const defaultTwoStage: TwoStageConfig = {
   enabled: false,
@@ -16,6 +24,7 @@ const defaultTwoStage: TwoStageConfig = {
   min_contour_area: 800,
   contour_padding: 0.25,
   debug_overlay: false,
+  crop_capture: defaultCropCapture,
 };
 
 export default function DetectionTab({ config }: Props) {
@@ -38,6 +47,14 @@ export default function DetectionTab({ config }: Props) {
   const [contourPadding, setContourPadding] = useState(ts.contour_padding);
   const [debugOverlay, setDebugOverlay] = useState(ts.debug_overlay);
 
+  // Crop capture state
+  const cc = ts.crop_capture ?? defaultCropCapture;
+  const [ccEnabled, setCcEnabled] = useState(cc.enabled);
+  const [ccSaveDir, setCcSaveDir] = useState(cc.save_dir);
+  const [ccMaxCrops, setCcMaxCrops] = useState(cc.max_crops);
+  const [ccMinInterval, setCcMinInterval] = useState(cc.min_interval_secs);
+  const [ccCaptureNegatives, setCcCaptureNegatives] = useState(cc.capture_negatives);
+
   const mutation = useUpdateConfigSection();
 
   const dirty =
@@ -53,7 +70,12 @@ export default function DetectionTab({ config }: Props) {
     secondStageConfidence !== ts.second_stage_confidence ||
     minContourArea !== ts.min_contour_area ||
     contourPadding !== ts.contour_padding ||
-    debugOverlay !== ts.debug_overlay;
+    debugOverlay !== ts.debug_overlay ||
+    ccEnabled !== cc.enabled ||
+    ccSaveDir !== cc.save_dir ||
+    ccMaxCrops !== cc.max_crops ||
+    ccMinInterval !== cc.min_interval_secs ||
+    ccCaptureNegatives !== cc.capture_negatives;
 
   const handleSave = () => {
     mutation.mutate({
@@ -74,6 +96,13 @@ export default function DetectionTab({ config }: Props) {
           min_contour_area: minContourArea,
           contour_padding: contourPadding,
           debug_overlay: debugOverlay,
+          crop_capture: {
+            enabled: ccEnabled,
+            save_dir: ccSaveDir,
+            max_crops: ccMaxCrops,
+            min_interval_secs: ccMinInterval,
+            capture_negatives: ccCaptureNegatives,
+          },
         },
       },
     });
@@ -166,6 +195,56 @@ export default function DetectionTab({ config }: Props) {
                 onChange={setDebugOverlay}
                 description="Draw contours, tiles, and anchor box on the live stream"
               />
+
+              {/* Crop capture for training */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="mb-2 text-xs font-semibold text-gray-700">
+                  Crop Capture for Training
+                </h4>
+                <p className="mb-3 text-xs text-gray-500">
+                  Automatically save detection tile crops from two-stage inference for model
+                  training.
+                </p>
+                <Toggle
+                  label="Enable crop capture"
+                  checked={ccEnabled}
+                  onChange={setCcEnabled}
+                  description="Save tile crops to disk and record in the training database"
+                />
+
+                {ccEnabled && (
+                  <div className="mt-3 space-y-4 rounded-md border border-gray-100 bg-white p-3">
+                    <TextInput
+                      label="Save directory"
+                      value={ccSaveDir}
+                      onChange={setCcSaveDir}
+                      placeholder="data/training_crops"
+                    />
+                    <NumberInput
+                      label="Max crops"
+                      value={ccMaxCrops}
+                      onChange={setCcMaxCrops}
+                      min={100}
+                      max={50000}
+                      step={100}
+                    />
+                    <SliderInput
+                      label="Min interval (seconds)"
+                      value={ccMinInterval}
+                      onChange={setCcMinInterval}
+                      min={0.5}
+                      max={60}
+                      step={0.5}
+                    />
+                    <Toggle
+                      label="Capture negatives"
+                      checked={ccCaptureNegatives}
+                      onChange={setCcCaptureNegatives}
+                      description="Also save tiles with no detections as negative training examples"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -43,6 +43,14 @@ export interface RoiConfig {
   min_overlap: number;
 }
 
+export interface CropCaptureConfig {
+  enabled: boolean;
+  save_dir: string;
+  max_crops: number;
+  min_interval_secs: number;
+  capture_negatives: boolean;
+}
+
 export interface TwoStageConfig {
   enabled: boolean;
   anchor_label: string;
@@ -52,6 +60,7 @@ export interface TwoStageConfig {
   min_contour_area: number;
   contour_padding: number;
   debug_overlay: boolean;
+  crop_capture: CropCaptureConfig;
 }
 
 export interface DetectionConfig {
