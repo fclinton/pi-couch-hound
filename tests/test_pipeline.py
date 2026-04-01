@@ -443,3 +443,52 @@ class TestTwoStageDetection:
 
         # Only the dog should trigger, couch2 should be filtered
         mock_action.execute.assert_called_once()
+
+    async def test_two_stage_filters_scene_detections_by_confidence_threshold(self) -> None:
+        """Scene detections below confidence_threshold are excluded (except anchors)."""
+        two_stage = TwoStageConfig(
+            enabled=True,
+            anchor_label="couch",
+            anchor_confidence=0.40,
+            second_stage_confidence=0.40,
+        )
+        config = AppConfig(
+            detection=DetectionConfig(
+                confidence_threshold=0.60,
+                two_stage=two_stage,
+            ),
+            cooldown=CooldownConfig(seconds=0),
+        )
+        pipeline = DetectionPipeline(config)
+        mock_cam = _make_mock_camera(stop_after=1, pipeline=pipeline)
+
+        # Stage 1 returns couch at 0.50 (above anchor_confidence but irrelevant)
+        # and a dog at 0.45 (above anchor_confidence but BELOW confidence_threshold)
+        couch = Detection(
+            label="couch", confidence=0.50, bbox=[0.1, 0.2, 0.9, 0.8], is_target=False
+        )
+        low_dog = Detection(label="dog", confidence=0.45, bbox=[0.3, 0.3, 0.6, 0.6], is_target=True)
+
+        mock_det = MagicMock()
+        mock_det.load = MagicMock()
+        mock_det.unload = MagicMock()
+        mock_det.detect_with_threshold = MagicMock(return_value=[couch, low_dog])
+        # snake_detect returns no additional detections
+        mock_det.snake_detect = MagicMock(return_value=([], None))
+
+        mock_action = MagicMock()
+        mock_action.execute = AsyncMock()
+        mock_action.name = "test_action"
+
+        with (
+            patch("couch_hound.pipeline.Camera", return_value=mock_cam),
+            patch("couch_hound.pipeline.Detector", return_value=mock_det),
+            patch.object(pipeline, "_build_actions", return_value=[mock_action]),
+        ):
+            await pipeline.start()
+            assert pipeline._task is not None
+            await pipeline._task
+
+        # The low-confidence dog should have been filtered out — no action fired
+        mock_action.execute.assert_not_called()
+        assert pipeline.stats.detection_count == 0

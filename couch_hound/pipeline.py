@@ -294,7 +294,12 @@ class DetectionPipeline:
             return await asyncio.to_thread(self._detector.detect, frame)
 
         # Stage 2: Snake each anchor region
-        all_detections: list[Detection] = list(scene_detections)
+        threshold = self._config.detection.confidence_threshold
+        all_detections: list[Detection] = [
+            d
+            for d in scene_detections
+            if d.label == two_stage_cfg.anchor_label or d.confidence >= threshold
+        ]
         last_debug: SnakeDebugInfo | None = None
         capture = self._crop_capture
 
