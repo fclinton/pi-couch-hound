@@ -16,10 +16,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from couch_hound.api.routes_snapshots import _sanitize_path
 from couch_hound.api.schemas import (
+    TrainingSampleBatchReviewRequest,
     TrainingSampleCreateRequest,
     TrainingSampleFromEventRequest,
     TrainingSampleListResponse,
     TrainingSampleResponse,
+    TrainingSampleReviewRequest,
     TrainingSampleUpdateRequest,
     TrainingStatsResponse,
 )
@@ -58,6 +60,8 @@ def _sample_to_response(sample: dict[str, object]) -> TrainingSampleResponse:
         source=str(sample["source"]),
         source_event_id=eid if isinstance(eid, int) else None,
         notes=str(sample["notes"]) if sample["notes"] is not None else None,
+        status=str(sample.get("status", "approved")),
+        reviewed_at=(str(sample["reviewed_at"]) if sample.get("reviewed_at") is not None else None),
         created_at=str(sample["created_at"]) if sample["created_at"] is not None else None,
     )
 
@@ -73,11 +77,17 @@ async def list_samples(
     label: str | None = None,
     is_positive: bool | None = None,
     source: str | None = None,
+    status: str | None = None,
 ) -> TrainingSampleListResponse:
     """List training samples with optional filters."""
     db = _get_training_db(request)
     samples, total = await db.list_samples(
-        limit=limit, offset=offset, label=label, is_positive=is_positive, source=source
+        limit=limit,
+        offset=offset,
+        label=label,
+        is_positive=is_positive,
+        source=source,
+        status=status,
     )
     return TrainingSampleListResponse(
         samples=[_sample_to_response(s) for s in samples],
@@ -109,6 +119,7 @@ async def update_sample(
         is_positive=body.is_positive,
         bbox=body.bbox,
         notes=body.notes,
+        status=body.status,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Sample not found")
@@ -129,6 +140,43 @@ async def delete_sample(request: Request, sample_id: int) -> dict[str, str]:
         image_path.unlink()
 
     return {"status": "deleted"}
+
+
+# ── Review ──
+
+
+@router.post("/samples/{sample_id}/review", response_model=TrainingSampleResponse)
+async def review_sample(
+    request: Request, sample_id: int, body: TrainingSampleReviewRequest
+) -> TrainingSampleResponse:
+    """Approve or reject a pending training sample."""
+    if body.status not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Status must be 'approved' or 'rejected'")
+    db = _get_training_db(request)
+    updated = await db.review_sample(sample_id, body.status)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return _sample_to_response(updated)
+
+
+@router.post("/samples/review-batch")
+async def review_batch(
+    request: Request, body: TrainingSampleBatchReviewRequest
+) -> dict[str, object]:
+    """Bulk approve or reject training samples."""
+    db = _get_training_db(request)
+    reviewed = 0
+    errors: list[str] = []
+    for item in body.items:
+        if item.status not in ("approved", "rejected"):
+            errors.append(f"Sample {item.id}: invalid status '{item.status}'")
+            continue
+        result = await db.review_sample(item.id, item.status)
+        if result is None:
+            errors.append(f"Sample {item.id}: not found")
+        else:
+            reviewed += 1
+    return {"reviewed": reviewed, "errors": errors}
 
 
 # ── Create from event ──
@@ -296,12 +344,14 @@ async def get_stats(request: Request) -> TrainingStatsResponse:
     total = stats["total"]
     positive = stats["positive"]
     negative = stats["negative"]
+    pending = stats["pending"]
     by_label = stats["by_label"]
     by_source = stats["by_source"]
     return TrainingStatsResponse(
         total=total if isinstance(total, int) else 0,
         positive=positive if isinstance(positive, int) else 0,
         negative=negative if isinstance(negative, int) else 0,
+        pending=pending if isinstance(pending, int) else 0,
         by_label=by_label if isinstance(by_label, dict) else {},
         by_source=by_source if isinstance(by_source, dict) else {},
     )

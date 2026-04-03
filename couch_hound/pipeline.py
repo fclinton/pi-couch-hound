@@ -358,6 +358,7 @@ class DetectionPipeline:
                                 bbox=det.bbox,
                                 confidence=det.confidence,
                                 source="crop_capture",
+                                status="pending",
                             )
                         except Exception:
                             logger.exception("Failed to insert crop sample")
@@ -376,6 +377,7 @@ class DetectionPipeline:
                             label="background",
                             is_positive=False,
                             source="crop_capture",
+                            status="pending",
                         )
                     except Exception:
                         logger.exception("Failed to insert negative crop sample")
