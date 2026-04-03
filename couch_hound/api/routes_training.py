@@ -35,6 +35,12 @@ TRAINING_IMAGES_DIR = Path("data/training_images")
 TRAINING_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 _RESOLVED_TRAINING_DIR = TRAINING_IMAGES_DIR.resolve()
 
+TRAINING_CROPS_DIR = Path("data/training_crops")
+TRAINING_CROPS_DIR.mkdir(parents=True, exist_ok=True)
+_RESOLVED_CROPS_DIR = TRAINING_CROPS_DIR.resolve()
+
+_IMAGE_DIRS = [_RESOLVED_TRAINING_DIR, _RESOLVED_CROPS_DIR]
+
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
@@ -326,11 +332,11 @@ async def capture_sample(
 @router.get("/images/{filename}")
 async def get_training_image(filename: str) -> FileResponse:
     """Serve a training sample image."""
-    safe_path = _sanitize_path(filename, _RESOLVED_TRAINING_DIR)
-    if not os.path.isfile(safe_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    return FileResponse(path=safe_path, media_type="image/jpeg")
+    for base_dir in _IMAGE_DIRS:
+        safe_path = _sanitize_path(filename, base_dir)
+        if os.path.isfile(safe_path):
+            return FileResponse(path=safe_path, media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="Image not found")
 
 
 # ── Stats ──
