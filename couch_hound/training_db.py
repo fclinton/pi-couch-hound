@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS training_samples (
     source        TEXT    NOT NULL DEFAULT 'manual',
     source_event_id INTEGER,
     notes         TEXT,
+    status        TEXT    NOT NULL DEFAULT 'approved',
+    reviewed_at   TEXT,
     created_at    TEXT    DEFAULT (datetime('now'))
 );
 """
@@ -32,6 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_samples_label ON training_samples(label);
 _CREATE_EVENT_UNIQUE_INDEX = """\
 CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_source_event_id
 ON training_samples(source_event_id) WHERE source_event_id IS NOT NULL;
+"""
+
+_CREATE_STATUS_INDEX = """\
+CREATE INDEX IF NOT EXISTS idx_samples_status ON training_samples(status);
 """
 
 
@@ -51,6 +57,8 @@ class TrainingDatabase:
         await self._db.execute(_CREATE_INDEX)
         await self._deduplicate_event_samples()
         await self._db.execute(_CREATE_EVENT_UNIQUE_INDEX)
+        await self._migrate_add_status_column()
+        await self._db.execute(_CREATE_STATUS_INDEX)
         await self._db.commit()
         logger.info("Training database initialized at %s", self._path)
 
@@ -68,6 +76,20 @@ class TrainingDatabase:
             logger.warning(
                 "Removed %d duplicate training samples during migration", cursor.rowcount
             )
+
+    async def _migrate_add_status_column(self) -> None:
+        """Add status and reviewed_at columns if missing (migration for existing DBs)."""
+        assert self._db is not None
+        cursor = await self._db.execute("PRAGMA table_info(training_samples)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "status" not in columns:
+            await self._db.execute(
+                "ALTER TABLE training_samples ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'"
+            )
+            logger.info("Migrated training_samples: added 'status' column")
+        if "reviewed_at" not in columns:
+            await self._db.execute("ALTER TABLE training_samples ADD COLUMN reviewed_at TEXT")
+            logger.info("Migrated training_samples: added 'reviewed_at' column")
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -87,6 +109,8 @@ class TrainingDatabase:
             "source": row["source"],
             "source_event_id": row["source_event_id"],
             "notes": row["notes"],
+            "status": row["status"],
+            "reviewed_at": row["reviewed_at"],
             "created_at": row["created_at"],
         }
 
@@ -101,13 +125,15 @@ class TrainingDatabase:
         source: str = "manual",
         source_event_id: int | None = None,
         notes: str | None = None,
+        status: str = "approved",
     ) -> int:
         """Insert a training sample and return its id."""
         assert self._db is not None
         cursor = await self._db.execute(
             "INSERT INTO training_samples"
-            " (image_path, label, is_positive, bbox, confidence, source, source_event_id, notes)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " (image_path, label, is_positive, bbox, confidence, source,"
+            "  source_event_id, notes, status)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 image_path,
                 label,
@@ -117,6 +143,7 @@ class TrainingDatabase:
                 source,
                 source_event_id,
                 notes,
+                status,
             ),
         )
         await self._db.commit()
@@ -167,6 +194,7 @@ class TrainingDatabase:
         label: str | None = None,
         is_positive: bool | None = None,
         source: str | None = None,
+        status: str | None = None,
     ) -> tuple[list[dict[str, object]], int]:
         """Paginated sample listing with optional filters."""
         assert self._db is not None
@@ -182,6 +210,9 @@ class TrainingDatabase:
         if source is not None:
             conditions.append("source = ?")
             params.append(source)
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
 
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -210,6 +241,7 @@ class TrainingDatabase:
         is_positive: bool | None = None,
         bbox: list[float] | None = None,
         notes: str | None = None,
+        status: str | None = None,
     ) -> dict[str, object] | None:
         """Update fields on a sample. Returns updated sample or None."""
         assert self._db is not None
@@ -233,6 +265,11 @@ class TrainingDatabase:
         if notes is not None:
             updates.append("notes = ?")
             params.append(notes)
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+            if status in ("approved", "rejected") and existing["status"] == "pending":
+                updates.append("reviewed_at = datetime('now')")
 
         if not updates:
             return existing
@@ -256,35 +293,46 @@ class TrainingDatabase:
         return sample
 
     async def get_stats(self) -> dict[str, object]:
-        """Aggregate dataset statistics."""
+        """Aggregate dataset statistics (only counts approved samples)."""
         assert self._db is not None
 
-        cursor = await self._db.execute("SELECT COUNT(*) FROM training_samples")
+        cursor = await self._db.execute(
+            "SELECT COUNT(*) FROM training_samples WHERE status = 'approved'"
+        )
         row = await cursor.fetchone()
         assert row is not None
         total: int = row[0]
 
         cursor = await self._db.execute(
-            "SELECT COUNT(*) FROM training_samples WHERE is_positive = 1"
+            "SELECT COUNT(*) FROM training_samples WHERE is_positive = 1 AND status = 'approved'"
         )
         row = await cursor.fetchone()
         assert row is not None
         positive: int = row[0]
 
         cursor = await self._db.execute(
-            "SELECT COUNT(*) FROM training_samples WHERE is_positive = 0"
+            "SELECT COUNT(*) FROM training_samples WHERE is_positive = 0 AND status = 'approved'"
         )
         row = await cursor.fetchone()
         assert row is not None
         negative: int = row[0]
 
         cursor = await self._db.execute(
-            "SELECT label, COUNT(*) as cnt FROM training_samples GROUP BY label ORDER BY cnt DESC"
+            "SELECT COUNT(*) FROM training_samples WHERE status = 'pending'"
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        pending: int = row[0]
+
+        cursor = await self._db.execute(
+            "SELECT label, COUNT(*) as cnt FROM training_samples"
+            " WHERE status = 'approved' GROUP BY label ORDER BY cnt DESC"
         )
         by_label: dict[str, int] = {r["label"]: r["cnt"] for r in await cursor.fetchall()}
 
         cursor = await self._db.execute(
-            "SELECT source, COUNT(*) as cnt FROM training_samples GROUP BY source ORDER BY cnt DESC"
+            "SELECT source, COUNT(*) as cnt FROM training_samples"
+            " WHERE status = 'approved' GROUP BY source ORDER BY cnt DESC"
         )
         by_source: dict[str, int] = {r["source"]: r["cnt"] for r in await cursor.fetchall()}
 
@@ -292,13 +340,23 @@ class TrainingDatabase:
             "total": total,
             "positive": positive,
             "negative": negative,
+            "pending": pending,
             "by_label": by_label,
             "by_source": by_source,
         }
 
     async def get_all_samples(self) -> list[dict[str, object]]:
-        """Fetch all samples (for export)."""
+        """Fetch all approved samples (for export)."""
         assert self._db is not None
-        cursor = await self._db.execute("SELECT * FROM training_samples ORDER BY created_at")
+        cursor = await self._db.execute(
+            "SELECT * FROM training_samples WHERE status = 'approved' ORDER BY created_at"
+        )
         rows = await cursor.fetchall()
         return [self._deserialize_row(r) for r in rows]
+
+    async def review_sample(self, sample_id: int, status: str) -> dict[str, object] | None:
+        """Set sample status to approved or rejected. Returns updated sample or None."""
+        if status not in ("approved", "rejected"):
+            msg = f"Invalid review status: {status}"
+            raise ValueError(msg)
+        return await self.update_sample(sample_id, status=status)

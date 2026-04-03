@@ -254,6 +254,8 @@ export interface TrainingSample {
   source: string;
   source_event_id: number | null;
   notes: string | null;
+  status: string;
+  reviewed_at: string | null;
   created_at: string | null;
 }
 
@@ -268,6 +270,7 @@ export interface TrainingStats {
   total: number;
   positive: number;
   negative: number;
+  pending: number;
   by_label: Record<string, number>;
   by_source: Record<string, number>;
 }

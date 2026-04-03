@@ -9,12 +9,14 @@ import {
 } from "@/api/training";
 import type { TrainingSample } from "@/api/types";
 import SwipeLabeler from "@/components/training/SwipeLabeler";
+import CropReviewer from "@/components/training/CropReviewer";
 
-const tabs = ["Dataset", "Labeling", "Export"] as const;
+const tabs = ["Review", "Dataset", "Labeling", "Export"] as const;
 type Tab = (typeof tabs)[number];
 
 export default function Training() {
-  const [activeTab, setActiveTab] = useState<Tab>("Dataset");
+  const [activeTab, setActiveTab] = useState<Tab>("Review");
+  const { data: stats } = useTrainingStats();
 
   return (
     <div className="space-y-6">
@@ -34,12 +36,18 @@ export default function Training() {
               )}
             >
               {tab}
+              {tab === "Review" && stats && stats.pending > 0 && (
+                <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  {stats.pending}
+                </span>
+              )}
             </button>
           ))}
         </nav>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-6">
+        {activeTab === "Review" && <ReviewTab />}
         {activeTab === "Dataset" && <DatasetTab />}
         {activeTab === "Labeling" && <LabelingTab />}
         {activeTab === "Export" && <ExportTab />}
@@ -62,6 +70,7 @@ function DatasetTab() {
     limit,
     offset: page * limit,
     is_positive: isPositive,
+    status: "approved",
   });
   const { data: stats } = useTrainingStats();
   const captureMutation = useCaptureSample();
@@ -292,6 +301,12 @@ function SampleCard({ sample }: { sample: TrainingSample }) {
       </div>
     </div>
   );
+}
+
+// ── Review Tab ──
+
+function ReviewTab() {
+  return <CropReviewer />;
 }
 
 // ── Labeling Tab ──

@@ -220,6 +220,8 @@ class TrainingSampleResponse(BaseModel):
     source: str
     source_event_id: int | None = None
     notes: str | None = None
+    status: str = "approved"
+    reviewed_at: str | None = None
     created_at: str | None = None
 
 
@@ -242,12 +244,14 @@ class TrainingSampleUpdateRequest(BaseModel):
     is_positive: bool | None = None
     bbox: list[float] | None = None
     notes: str | None = None
+    status: str | None = None
 
 
 class TrainingStatsResponse(BaseModel):
     total: int
     positive: int
     negative: int
+    pending: int
     by_label: dict[str, int]
     by_source: dict[str, int]
 
@@ -255,6 +259,19 @@ class TrainingStatsResponse(BaseModel):
 class TrainingSampleFromEventRequest(BaseModel):
     is_positive: bool = True
     notes: str | None = None
+
+
+class TrainingSampleReviewRequest(BaseModel):
+    status: str  # "approved" or "rejected"
+
+
+class TrainingSampleBatchReviewItem(BaseModel):
+    id: int
+    status: str  # "approved" or "rejected"
+
+
+class TrainingSampleBatchReviewRequest(BaseModel):
+    items: list[TrainingSampleBatchReviewItem]
 
 
 # ── Chromecast ──

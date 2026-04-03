@@ -12,19 +12,21 @@ interface SamplesQueryParams {
   label?: string;
   is_positive?: boolean;
   source?: string;
+  status?: string;
 }
 
 export function useTrainingSamples(params: SamplesQueryParams = {}) {
-  const { limit = 24, offset = 0, label, is_positive, source } = params;
+  const { limit = 24, offset = 0, label, is_positive, source, status } = params;
   const searchParams = new URLSearchParams();
   searchParams.set("limit", String(limit));
   searchParams.set("offset", String(offset));
   if (label) searchParams.set("label", label);
   if (is_positive !== undefined) searchParams.set("is_positive", String(is_positive));
   if (source) searchParams.set("source", source);
+  if (status) searchParams.set("status", status);
 
   return useQuery({
-    queryKey: ["training", "samples", { limit, offset, label, is_positive, source }],
+    queryKey: ["training", "samples", { limit, offset, label, is_positive, source, status }],
     queryFn: () =>
       apiFetch<TrainingSampleListResponse>(
         `/training/samples?${searchParams.toString()}`,
@@ -156,6 +158,43 @@ export function useUploadSample() {
       }
       return res.json() as Promise<TrainingSample>;
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["training"] });
+    },
+  });
+}
+
+export function useReviewSample() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      sampleId,
+      status,
+    }: {
+      sampleId: number;
+      status: "approved" | "rejected";
+    }) =>
+      apiFetch<TrainingSample>(`/training/samples/${sampleId}/review`, {
+        method: "POST",
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["training"] });
+    },
+  });
+}
+
+export function useReviewBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (items: { id: number; status: "approved" | "rejected" }[]) =>
+      apiFetch<{ reviewed: number; errors: string[] }>(
+        "/training/samples/review-batch",
+        {
+          method: "POST",
+          body: JSON.stringify({ items }),
+        },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["training"] });
     },
