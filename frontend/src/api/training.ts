@@ -103,6 +103,7 @@ export function useUpdateSample() {
         is_positive?: boolean;
         bbox?: number[];
         notes?: string;
+        status?: string;
       };
     }) =>
       apiFetch<TrainingSample>(`/training/samples/${sampleId}`, {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { useTrainingSamples, useReviewSample } from "@/api/training";
+import { useTrainingSamples, useReviewSample, useUpdateSample } from "@/api/training";
 import type { TrainingSample } from "@/api/types";
 
 export default function CropReviewer() {
@@ -8,6 +8,7 @@ export default function CropReviewer() {
   const [reviewedCount, setReviewedCount] = useState(0);
   const [skippedIds, setSkippedIds] = useState<Set<number>>(new Set());
   const [swipeDir, setSwipeDir] = useState<"left" | "right" | null>(null);
+  const [lastAction, setLastAction] = useState<{ sampleId: number } | null>(null);
 
   const { data, isLoading, refetch } = useTrainingSamples({
     source: "crop_capture",
@@ -15,6 +16,7 @@ export default function CropReviewer() {
     limit: 200,
   });
   const reviewMutation = useReviewSample();
+  const updateMutation = useUpdateSample();
 
   const pendingSamples: TrainingSample[] =
     data?.samples.filter((s) => !skippedIds.has(s.id)) ?? [];
@@ -33,6 +35,7 @@ export default function CropReviewer() {
         { sampleId: currentSample.id, status },
         {
           onSuccess: () => {
+            setLastAction({ sampleId: currentSample.id });
             setReviewedCount((c) => c + 1);
             refetch();
             setTimeout(() => setSwipeDir(null), 150);
@@ -46,6 +49,21 @@ export default function CropReviewer() {
     [currentSample, reviewMutation, refetch],
   );
 
+  const handleUndo = useCallback(() => {
+    if (!lastAction || updateMutation.isPending) return;
+
+    updateMutation.mutate(
+      { sampleId: lastAction.sampleId, data: { status: "pending" } },
+      {
+        onSuccess: () => {
+          setReviewedCount((c) => Math.max(0, c - 1));
+          setLastAction(null);
+          refetch();
+        },
+      },
+    );
+  }, [lastAction, updateMutation, refetch]);
+
   const handleSkip = useCallback(() => {
     if (!currentSample) return;
     setSkippedIds((prev) => new Set(prev).add(currentSample.id));
@@ -58,10 +76,11 @@ export default function CropReviewer() {
       if (e.key === "ArrowLeft" || e.key === "a") handleReview("rejected");
       else if (e.key === "ArrowRight" || e.key === "d") handleReview("approved");
       else if (e.key === "ArrowDown" || e.key === "s") handleSkip();
+      else if (e.key === "z" || (e.key === "z" && (e.ctrlKey || e.metaKey))) handleUndo();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleReview, handleSkip]);
+  }, [handleReview, handleSkip, handleUndo]);
 
   if (isLoading) {
     return <p className="text-sm text-gray-500">Loading pending crops...</p>;
@@ -115,6 +134,31 @@ export default function CropReviewer() {
           />
         </div>
       </div>
+
+      {/* Undo button */}
+      {lastAction && (
+        <div className="flex justify-center">
+          <button
+            onClick={handleUndo}
+            disabled={updateMutation.isPending}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-3.5 w-3.5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M7.793 2.232a.75.75 0 01-.025 1.06L3.622 7.25h10.003a5.375 5.375 0 010 10.75H10.75a.75.75 0 010-1.5h2.875a3.875 3.875 0 000-7.75H3.622l4.146 3.957a.75.75 0 01-1.036 1.085l-5.5-5.25a.75.75 0 010-1.085l5.5-5.25a.75.75 0 011.06.025z"
+                clipRule="evenodd"
+              />
+            </svg>
+            {updateMutation.isPending ? "Undoing..." : "Undo last review"}
+          </button>
+        </div>
+      )}
 
       {/* Card */}
       {currentSample && (
@@ -242,7 +286,11 @@ export default function CropReviewer() {
         <kbd className="rounded border border-gray-300 px-1.5 py-0.5 font-mono text-gray-600">
           &rarr;
         </kbd>{" "}
-        approve
+        approve &middot;{" "}
+        <kbd className="rounded border border-gray-300 px-1.5 py-0.5 font-mono text-gray-600">
+          Z
+        </kbd>{" "}
+        undo
       </p>
     </div>
   );
