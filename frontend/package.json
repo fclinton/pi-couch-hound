@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit"
@@ -23,25 +23,28 @@
     "zustand": "^5.0.12"
   },
   "overrides": {
-    "minimatch": ">=9.0.7"
+    "eslint-plugin-react-hooks": {
+      "eslint": "$eslint"
+    }
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
-    "@typescript-eslint/eslint-plugin": "^8.57.1",
-    "@typescript-eslint/parser": "^8.57.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.1",
     "autoprefixer": "^10.4.21",
-    "eslint": "^8.57.1",
-    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint": "^10.1.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^16.0.0",
     "jsdom": "^28.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.1",
     "vite": "^8.0.2",
     "vitest": "^4.1.1"
   }

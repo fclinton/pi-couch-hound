@@ -26,6 +26,7 @@ export function useWebSocket(
   const reconnectDelay = useRef(1000);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmounted = useRef(false);
+  const connectRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(() => {
     if (unmounted.current) return;
@@ -59,7 +60,7 @@ export function useWebSocket(
           reconnectDelay.current * 2,
           RECONNECT_CAP_MS,
         );
-        connect();
+        connectRef.current?.();
       }, reconnectDelay.current);
     };
 
@@ -67,6 +68,10 @@ export function useWebSocket(
       ws.close();
     };
   }, [path, options?.binary]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  });
 
   useEffect(() => {
     unmounted.current = false;
