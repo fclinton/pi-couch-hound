@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEvents } from "@/api/events";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -41,14 +41,6 @@ export default function EventsTicker() {
   const { data, isLoading } = useEvents({ limit: 20 });
   const { lastMessage } = useWebSocket("/ws/events");
   const queryClient = useQueryClient();
-  const [events, setEvents] = useState<DetectionEvent[]>([]);
-
-  // Sync from REST query
-  useEffect(() => {
-    if (data?.events) {
-      setEvents(data.events);
-    }
-  }, [data]);
 
   // On WebSocket event, invalidate the events query to refetch with full data
   useEffect(() => {
@@ -56,6 +48,8 @@ export default function EventsTicker() {
       queryClient.invalidateQueries({ queryKey: ["events"] });
     }
   }, [lastMessage, queryClient]);
+
+  const events = data?.events ?? [];
 
   if (isLoading) {
     return <p className="text-sm text-gray-400">Loading recent events...</p>;
