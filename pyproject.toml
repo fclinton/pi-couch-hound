@@ -9,7 +9,7 @@ dynamic = ["version"]
 requires-python = ">=3.12,<3.13"
 license = { text = "AGPL-3.0" }
 dependencies = [
-    "fastapi>=0.104.0",
+    "fastapi>=0.135.3",
     "uvicorn[standard]>=0.24.0",
     "opencv-python-headless>=4.8.0",
     "pyyaml>=6.0",
