@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 
-def _polygon_area(vertices: list[list[float]]) -> float:
-    """Compute area of a polygon using the shoelace formula."""
+def _signed_area(vertices: list[list[float]]) -> float:
+    """Compute the signed area of a polygon using the shoelace formula.
+
+    The sign encodes winding order; callers needing geometric area take abs().
+    """
     n = len(vertices)
     if n < 3:
         return 0.0
@@ -13,7 +16,23 @@ def _polygon_area(vertices: list[list[float]]) -> float:
         j = (i + 1) % n
         area += vertices[i][0] * vertices[j][1]
         area -= vertices[j][0] * vertices[i][1]
-    return abs(area) / 2.0
+    return area / 2.0
+
+
+def _polygon_area(vertices: list[list[float]]) -> float:
+    """Compute area of a polygon using the shoelace formula."""
+    return abs(_signed_area(vertices))
+
+
+def _normalize_winding(polygon: list[list[float]]) -> list[list[float]]:
+    """Return the polygon with positive-signed-area winding.
+
+    Sutherland-Hodgman's inside test assumes a fixed winding order; user-drawn
+    polygons can arrive in either order, so normalize before clipping.
+    """
+    if _signed_area(polygon) < 0:
+        return list(reversed(polygon))
+    return polygon
 
 
 def _clip_polygon_by_edge(
@@ -101,7 +120,7 @@ def bbox_in_roi(
         [x1, y2],
     ]
 
-    clipped = _clip_polygon_by_polygon(bbox_poly, polygon)
+    clipped = _clip_polygon_by_polygon(bbox_poly, _normalize_winding(polygon))
     if len(clipped) < 3:
         return False
 

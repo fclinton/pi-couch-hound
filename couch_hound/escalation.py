@@ -6,6 +6,12 @@ import time
 
 from couch_hound.config import EscalationConfig
 
+# Number of consecutive no-detection cycles required before escalation state
+# can reset. Detections flicker at the confidence-threshold boundary; without
+# this debounce a single missed frame resets state and the next detected frame
+# immediately re-fires every delay-0 level, spamming actions every cycle.
+_RESET_DEBOUNCE_CYCLES = 3
+
 
 class EscalationManager:
     """Track sustained detection and determine which escalation levels to fire."""
@@ -15,6 +21,7 @@ class EscalationManager:
         self._initial_detection_time: float | None = None
         self._last_detection_time: float | None = None
         self._levels_fired: set[int] = set()
+        self._consecutive_misses: int = 0
 
     def update_detection(self, detected: bool) -> list[int]:
         """Called each detection cycle. Returns list of level indices to fire now.
@@ -31,6 +38,7 @@ class EscalationManager:
             return self._handle_no_detection(now)
 
         # Detection is active
+        self._consecutive_misses = 0
         if self._initial_detection_time is None:
             self._initial_detection_time = now
 
@@ -53,8 +61,13 @@ class EscalationManager:
         if self._initial_detection_time is None:
             return []
 
+        self._consecutive_misses += 1
+
         if self._config.reset_cooldown == 0:
-            self.reset()
+            # No time-based hysteresis configured — debounce by consecutive
+            # cycles instead, so one flickered frame doesn't reset everything.
+            if self._consecutive_misses >= _RESET_DEBOUNCE_CYCLES:
+                self.reset()
             return []
 
         # Check if reset_cooldown has elapsed since last detection
@@ -88,6 +101,7 @@ class EscalationManager:
         self._initial_detection_time = None
         self._last_detection_time = None
         self._levels_fired.clear()
+        self._consecutive_misses = 0
 
     def update_config(self, config: EscalationConfig) -> None:
         """Update config and reset state."""

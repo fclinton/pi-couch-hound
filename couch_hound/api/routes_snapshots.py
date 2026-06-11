@@ -29,11 +29,10 @@ def _sanitize_path(filename: str, base_dir: Path) -> str:
     if not _SAFE_FILENAME_RE.match(filename) or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    # Source - https://stackoverflow.com/a/78879674
-    # Posted by andycaine
-    # Retrieved 2026-03-12, License - CC BY-SA 4.0
     fullpath = os.path.normpath(os.path.realpath(os.path.join(base_dir, filename)))
-    if not fullpath.startswith(str(base_dir)):
+    # The prefix check includes the trailing separator so a sibling directory
+    # like "snapshots_evil" can't pass as inside "snapshots".
+    if not fullpath.startswith(str(base_dir) + os.sep):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     return fullpath

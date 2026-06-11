@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -218,14 +219,16 @@ async def create_sample_from_event(
     if not snapshot_path:
         raise HTTPException(status_code=400, detail="Event has no snapshot image")
 
-    snapshots_base = str(Path("snapshots").resolve())
-    src_resolved = os.path.normpath(os.path.realpath(str(snapshot_path)))
-    if not src_resolved.startswith(snapshots_base) or not os.path.isfile(src_resolved):
+    snapshots_base = Path("snapshots").resolve()
+    src_resolved = Path(os.path.realpath(str(snapshot_path)))
+    # is_relative_to (rather than a startswith prefix check) so a sibling
+    # directory like "snapshots_evil" can't pass as inside "snapshots".
+    if not src_resolved.is_relative_to(snapshots_base) or not src_resolved.is_file():
         raise HTTPException(status_code=400, detail="Event has no valid snapshot image")
 
-    src_name = os.path.basename(src_resolved)
+    src_name = src_resolved.name
     dest = _sanitize_path(f"event_{event_id}_{src_name}", _RESOLVED_TRAINING_DIR)
-    shutil.copy2(src_resolved, dest)
+    await asyncio.to_thread(shutil.copy2, src_resolved, dest)
 
     sample_id = await db.insert_sample(
         image_path=str(dest),
@@ -272,7 +275,7 @@ async def upload_sample(
 
     safe_name = f"upload_{int(time.time() * 1000)}{ext}"
     dest = TRAINING_IMAGES_DIR / safe_name
-    dest.write_bytes(content)
+    await asyncio.to_thread(dest.write_bytes, content)
 
     db = _get_training_db(request)
     sample_id = await db.insert_sample(
@@ -309,7 +312,7 @@ async def capture_sample(
 
     filename = f"capture_{int(time.time() * 1000)}.jpg"
     dest = TRAINING_IMAGES_DIR / filename
-    cv2.imwrite(str(dest), frame)
+    await asyncio.to_thread(cv2.imwrite, str(dest), frame)
 
     db = _get_training_db(request)
     sample_id = await db.insert_sample(
@@ -366,15 +369,8 @@ async def get_stats(request: Request) -> TrainingStatsResponse:
 # ── Export ──
 
 
-@router.get("/export")
-async def export_dataset(request: Request) -> StreamingResponse:
-    """Export the training dataset as a ZIP with Pascal VOC annotations."""
-    db = _get_training_db(request)
-    samples = await db.get_all_samples()
-
-    if not samples:
-        raise HTTPException(status_code=400, detail="No training samples to export")
-
+def _build_export_zip(samples: list[dict[str, object]]) -> io.BytesIO:
+    """Build the export ZIP in memory. Blocking — call via asyncio.to_thread."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # Write manifest
@@ -412,6 +408,19 @@ async def export_dataset(request: Request) -> StreamingResponse:
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
 
     buf.seek(0)
+    return buf
+
+
+@router.get("/export")
+async def export_dataset(request: Request) -> StreamingResponse:
+    """Export the training dataset as a ZIP with Pascal VOC annotations."""
+    db = _get_training_db(request)
+    samples = await db.get_all_samples()
+
+    if not samples:
+        raise HTTPException(status_code=400, detail="No training samples to export")
+
+    buf = await asyncio.to_thread(_build_export_zip, samples)
     return StreamingResponse(
         buf,
         media_type="application/zip",

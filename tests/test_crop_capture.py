@@ -62,6 +62,19 @@ class TestSaveTile:
         assert path.exists()
         assert "neg_background_none" in path.name
 
+    def test_sanitizes_label_with_slash(self, capture: CropCapture, dummy_tile: np.ndarray) -> None:
+        """The default coco labels file contains "n/a" — the slash must not
+        produce a nested (nonexistent) directory and crash the pipeline."""
+        path = capture.save_tile(dummy_tile, "n/a", True, 0.9)
+        assert path.exists()
+        assert path.parent == Path(capture.config.save_dir)
+        assert "n_a" in path.name
+
+    def test_sanitizes_traversal_label(self, capture: CropCapture, dummy_tile: np.ndarray) -> None:
+        path = capture.save_tile(dummy_tile, "../../evil", True, 0.9)
+        assert path.exists()
+        assert path.parent == Path(capture.config.save_dir)
+
     def test_prunes_over_limit(self, crop_config: CropCaptureConfig, tmp_path: Path) -> None:
         prune_config = CropCaptureConfig(
             enabled=True,

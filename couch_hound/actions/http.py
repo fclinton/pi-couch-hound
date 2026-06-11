@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -10,6 +11,10 @@ from couch_hound.actions.base import BaseAction
 from couch_hound.templates import render_template
 
 _REQUEST_TIMEOUT = 35.0
+
+# urllib also handles file:// and ftp:// — restrict to web schemes so a
+# malicious or template-mangled URL can't read local files.
+_ALLOWED_SCHEMES = {"http", "https"}
 
 
 class HttpAction(BaseAction):
@@ -20,6 +25,9 @@ class HttpAction(BaseAction):
         tpl_ctx = context.get("template_context", {})
 
         url = render_template(self.config.url or "", tpl_ctx)
+        scheme = urllib.parse.urlparse(url).scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES:
+            raise RuntimeError(f"HTTP action URL must use http/https, got: {url!r}")
         method = (self.config.method or "POST").upper()
         body = render_template(self.config.body or "", tpl_ctx) if self.config.body else None
         headers: dict[str, str] = {}

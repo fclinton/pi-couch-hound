@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -232,12 +234,34 @@ def setup_logging(config: LoggingConfig) -> None:
     logger.info("Logging configured: level=%s, file=%s", config.level, config.file)
 
 
+def _atomic_write_yaml(data: dict[str, Any], config_path: Path) -> None:
+    """Write YAML to a temp file in the same directory, then atomically replace.
+
+    A power loss mid-write (routine on a Raspberry Pi) must not be able to
+    truncate or corrupt the existing config file.
+    """
+    fd, tmp_path = tempfile.mkstemp(
+        dir=config_path.parent, prefix=f".{config_path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, config_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def save_config(config: AppConfig, path: Path | None = None) -> None:
     """Persist configuration to YAML file."""
     config_path = path or CONFIG_PATH
     data = config.model_dump(mode="json")
-    with open(config_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    _atomic_write_yaml(data, config_path)
     logger.info("Configuration saved to %s", config_path)
 
 
@@ -278,8 +302,7 @@ def migrate_config(repo_dir: Path | None = None) -> list[str]:
     added = _deep_merge_defaults(user_data, example_data)
 
     if added:
-        with open(config_path, "w") as f:
-            yaml.dump(user_data, f, default_flow_style=False, sort_keys=False)
+        _atomic_write_yaml(user_data, config_path)
         logger.info("Config migrated — added new keys: %s", ", ".join(added))
     else:
         logger.info("Config migration: no new keys to add")

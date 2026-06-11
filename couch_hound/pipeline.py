@@ -200,20 +200,31 @@ class DetectionPipeline:
         self._actions = self._build_actions()
         logger.info("Pipeline actions rebuilt: %d active", len(self._actions))
 
+    @staticmethod
+    async def _cancel_tasks(*tasks: asyncio.Task[None]) -> None:
+        """Cancel and await the given tasks, swallowing their exceptions."""
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _run(self) -> None:
         """Launch detection and stream loops, auto-restarting on failure."""
         retries = 0
         while not self._stop_event.is_set():
             loop_start = time.monotonic()
+            detection_task = asyncio.create_task(self._detection_loop())
+            stream_task = asyncio.create_task(self._stream_loop())
             try:
-                await asyncio.gather(
-                    self._detection_loop(),
-                    self._stream_loop(),
-                )
+                await asyncio.gather(detection_task, stream_task)
                 break  # clean exit via stop_event
             except asyncio.CancelledError:
+                await self._cancel_tasks(detection_task, stream_task)
                 raise
             except Exception:
+                # gather propagates the first exception without cancelling the
+                # sibling, so stop the surviving loop before closing the camera
+                # — otherwise each retry would leak another orphaned loop.
+                await self._cancel_tasks(detection_task, stream_task)
                 self._camera.close()
                 self._detector.unload()
 
@@ -512,6 +523,15 @@ class DetectionPipeline:
             encode_frame_jpeg,
         )
 
+        def annotate_and_encode(frame: npt.NDArray[Any]) -> bytes:
+            # CPU-bound OpenCV drawing + JPEG encode at ~15 FPS — keep it off
+            # the event loop so API/WebSocket handling stays responsive.
+            annotated = draw_detections(frame, self._last_detections)
+            debug_info = self._last_debug_info
+            if debug_info is not None:
+                annotated = draw_debug_overlay(annotated, debug_info)
+            return encode_frame_jpeg(annotated)
+
         while not self._stop_event.is_set():
             mgr = self._connection_manager
             if mgr is None or not mgr.has_stream_clients:
@@ -523,10 +543,7 @@ class DetectionPipeline:
                 await asyncio.sleep(0.1)
                 continue
 
-            annotated = draw_detections(frame, self._last_detections)
-            if self._last_debug_info is not None:
-                annotated = draw_debug_overlay(annotated, self._last_debug_info)
-            jpeg_bytes = await asyncio.to_thread(encode_frame_jpeg, annotated)
+            jpeg_bytes = await asyncio.to_thread(annotate_and_encode, frame)
             await mgr.broadcast_frame(jpeg_bytes)
 
             await asyncio.sleep(_STREAM_INTERVAL)

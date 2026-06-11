@@ -318,7 +318,9 @@ class UpdateManager:
                             raise tarfile.TarError(
                                 f"Refusing to extract path with traversal: {member.name}"
                             )
-                    tar.extractall(tmpdir)  # noqa: S202
+                    # The "data" filter additionally rejects links, devices, and
+                    # any member escaping the destination directory.
+                    tar.extractall(tmpdir, filter="data")  # noqa: S202
 
                 # Find the extracted directory (e.g., pi-couch-hound-0.2.0/)
                 extracted = [d for d in Path(tmpdir).iterdir() if d.is_dir()]

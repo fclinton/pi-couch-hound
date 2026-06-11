@@ -82,15 +82,27 @@ class TestEscalationFireLevels:
 
 
 class TestEscalationReset:
-    def test_immediate_reset_on_no_detection(self) -> None:
+    def test_reset_after_debounced_misses(self) -> None:
+        """With reset_cooldown=0, state resets after consecutive missed cycles."""
         mgr = EscalationManager(_make_config(reset_cooldown=0))
 
         mgr.update_detection(True)
-        mgr.update_detection(False)  # resets immediately
+        for _ in range(3):  # _RESET_DEBOUNCE_CYCLES consecutive misses
+            mgr.update_detection(False)
 
         # Should fire level 0 again since it was reset
         result = mgr.update_detection(True)
         assert result == [0]
+
+    def test_single_miss_does_not_reset(self) -> None:
+        """A flickering detection (one missed frame) must not re-fire level 0."""
+        mgr = EscalationManager(_make_config(reset_cooldown=0))
+
+        mgr.update_detection(True)
+        mgr.update_detection(False)  # single miss — debounced, no reset
+
+        result = mgr.update_detection(True)
+        assert result == []
 
     def test_delayed_reset_waits_for_cooldown(self) -> None:
         mgr = EscalationManager(_make_config(reset_cooldown=10))

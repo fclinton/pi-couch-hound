@@ -51,3 +51,23 @@ class TestBboxInRoi:
         bbox = [0.3, 0.5, 0.7, 0.9]
         # Triangle covers enough of the bbox
         assert bbox_in_roi(bbox, triangle, min_overlap=0.3) is True
+
+    def test_reversed_winding_polygon(self) -> None:
+        """A polygon drawn in the opposite winding order must behave identically.
+
+        User-drawn ROIs can arrive in either winding; the clipping algorithm
+        must not silently report zero overlap for one of them.
+        """
+        reversed_roi = list(reversed(self.SQUARE_ROI))
+        bbox = [0.3, 0.3, 0.7, 0.7]
+        assert bbox_in_roi(bbox, reversed_roi, min_overlap=0.9) is True
+
+    def test_reversed_winding_outside_still_false(self) -> None:
+        reversed_roi = list(reversed(self.SQUARE_ROI))
+        bbox = [0.0, 0.0, 0.1, 0.1]
+        assert bbox_in_roi(bbox, reversed_roi, min_overlap=0.1) is False
+
+    def test_reversed_triangle(self) -> None:
+        triangle: list[list[float]] = [[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]]
+        bbox = [0.3, 0.5, 0.7, 0.9]
+        assert bbox_in_roi(bbox, triangle, min_overlap=0.3) is True

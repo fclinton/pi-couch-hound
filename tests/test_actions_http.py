@@ -35,6 +35,27 @@ async def test_http_post_success() -> None:
         assert req.data == b'{"dog": true}'
 
 
+async def test_http_rejects_file_scheme() -> None:
+    """file:// URLs must be rejected — urllib would read local files."""
+    config = _make_config(url="file:///etc/passwd")
+    action = HttpAction(config)
+
+    with patch("urllib.request.urlopen") as mock_open:
+        with pytest.raises(RuntimeError, match="http/https"):
+            await action.execute({})
+        mock_open.assert_not_called()
+
+
+async def test_http_rejects_ftp_scheme() -> None:
+    config = _make_config(url="ftp://internal-host/secret")
+    action = HttpAction(config)
+
+    with patch("urllib.request.urlopen") as mock_open:
+        with pytest.raises(RuntimeError, match="http/https"):
+            await action.execute({})
+        mock_open.assert_not_called()
+
+
 async def test_http_get_no_body() -> None:
     config = _make_config(url="https://example.com/ping", method="GET")
     action = HttpAction(config)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -64,7 +65,7 @@ async def upload_sound(file: UploadFile) -> SoundUploadResponse:
     SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
     dest = SOUNDS_DIR / filename
     try:
-        dest.write_bytes(content)
+        await asyncio.to_thread(dest.write_bytes, content)
     except OSError as exc:
         logger.exception("Failed to save sound file %s", dest)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
@@ -105,8 +106,8 @@ async def upload_model(model: UploadFile, labels: UploadFile) -> ModelUploadResp
     model_path = MODELS_DIR / model_name
     labels_path = MODELS_DIR / labels_name
     try:
-        model_path.write_bytes(model_content)
-        labels_path.write_bytes(labels_content)
+        await asyncio.to_thread(model_path.write_bytes, model_content)
+        await asyncio.to_thread(labels_path.write_bytes, labels_content)
     except OSError as exc:
         logger.exception("Failed to save model files")
         raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc

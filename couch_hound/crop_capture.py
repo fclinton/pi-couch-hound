@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,7 +51,11 @@ class CropCapture:
         timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S_%f")
         prefix = "pos" if is_positive else "neg"
         conf_str = f"{confidence:.2f}" if confidence is not None else "none"
-        filename = f"crop_{prefix}_{label}_{conf_str}_{timestamp}.jpg"
+        # Model labels can contain path separators (the default coco labels file
+        # includes "n/a") — sanitize so the label can't escape the save dir or
+        # produce an unwritable path.
+        safe_label = re.sub(r"[^\w-]", "_", label) or "unknown"
+        filename = f"crop_{prefix}_{safe_label}_{conf_str}_{timestamp}.jpg"
         filepath = self._save_dir / filename
 
         success, buf = cv2.imencode(".jpg", tile)

@@ -106,10 +106,24 @@ class Detector:
         """Release the interpreter."""
         self._interpreter = None
 
-    def detect(self, frame: npt.NDArray[Any]) -> list[Detection]:
-        """Run inference on a frame and return filtered detections."""
+    def detect(
+        self, frame: npt.NDArray[Any], confidence_threshold: float | None = None
+    ) -> list[Detection]:
+        """Run inference on a frame and return filtered detections.
+
+        ``confidence_threshold`` overrides the configured threshold for this
+        call only (the shared config object is never mutated — it is the same
+        instance exposed via the API, so a temporary write could be observed
+        or even persisted by a concurrent config request).
+        """
         if self._interpreter is None:
             raise RuntimeError("Detector not loaded — call load() first")
+
+        threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else self._config.confidence_threshold
+        )
 
         input_shape = self._input_details[0]["shape"]
         height, width = int(input_shape[1]), int(input_shape[2])
@@ -133,7 +147,7 @@ class Detector:
         detections: list[Detection] = []
         for i in range(count):
             confidence = float(scores[i])
-            if confidence < self._config.confidence_threshold:
+            if confidence < threshold:
                 continue
 
             class_id = int(classes[i])
@@ -156,12 +170,7 @@ class Detector:
         self, frame: npt.NDArray[Any], confidence_threshold: float
     ) -> list[Detection]:
         """Run inference with an overridden confidence threshold."""
-        original = self._config.confidence_threshold
-        self._config.confidence_threshold = confidence_threshold
-        try:
-            return self.detect(frame)
-        finally:
-            self._config.confidence_threshold = original
+        return self.detect(frame, confidence_threshold=confidence_threshold)
 
     @staticmethod
     def find_contour_regions(
@@ -260,7 +269,11 @@ class Detector:
             regions = [(0, 0, anchor_crop.shape[1], anchor_crop.shape[0])]
             fallback = True
 
-        threshold = confidence_threshold or self._config.confidence_threshold
+        threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else self._config.confidence_threshold
+        )
         all_detections: list[Detection] = []
         tile_bboxes: list[list[float]] = []
         snake_tiles: list[SnakeTile] = []
