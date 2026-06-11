@@ -21,3 +21,4 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 export const getToken = () => useAuthStore.getState().token;
+export const clearToken = () => useAuthStore.getState().clearToken();

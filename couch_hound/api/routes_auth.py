@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from couch_hound.api.auth import (
     create_access_token,
     hash_password,
+    optional_auth,
     require_auth,
     verify_password,
 )
@@ -90,7 +91,7 @@ async def change_password(
 @router.get("/status")
 async def auth_status(
     request: Request,
-    username: str | None = Depends(require_auth),
+    username: str | None = Depends(optional_auth),
 ) -> AuthStatusResponse:
     """Check whether auth is enabled and if the current session is valid."""
     config: AppConfig = request.app.state.config

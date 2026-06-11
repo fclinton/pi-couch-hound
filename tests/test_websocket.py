@@ -19,6 +19,7 @@ from couch_hound.api.websocket import (
 from couch_hound.api.websocket import (
     router as ws_router,
 )
+from couch_hound.config import AppConfig
 from couch_hound.detector import Detection, SnakeDebugInfo
 from couch_hound.pipeline import PipelineState, PipelineStats
 
@@ -31,6 +32,7 @@ def ws_app() -> FastAPI:
 
     # Set up mock app state matching what lifespan provides
     app.state.ws_manager = ConnectionManager()
+    app.state.config = AppConfig()  # auth disabled by default
 
     # Mock pipeline with just the attributes WS endpoints need
     mock_pipeline = MagicMock()
@@ -235,6 +237,41 @@ class TestWsStream:
 class TestWsEvents:
     def test_events_connect_disconnect(self, ws_client: TestClient):
         with ws_client.websocket_connect("/ws/events") as ws:
+            assert ws is not None
+
+
+class TestWsAuth:
+    """WebSocket endpoints must enforce auth when it is enabled in config."""
+
+    @pytest.fixture
+    def auth_ws_client(self, ws_app: FastAPI) -> TestClient:
+        from couch_hound.api.auth import hash_password
+        from couch_hound.config import AuthConfig, WebConfig
+
+        ws_app.state.config = AppConfig(
+            web=WebConfig(auth=AuthConfig(enabled=True, password_hash=hash_password("pw")))
+        )
+        return TestClient(ws_app)
+
+    def test_rejects_without_token(self, auth_ws_client: TestClient):
+        from starlette.websockets import WebSocketDisconnect
+
+        with pytest.raises(WebSocketDisconnect):
+            with auth_ws_client.websocket_connect("/ws/stream"):
+                pass
+
+    def test_rejects_invalid_token(self, auth_ws_client: TestClient):
+        from starlette.websockets import WebSocketDisconnect
+
+        with pytest.raises(WebSocketDisconnect):
+            with auth_ws_client.websocket_connect("/ws/stream?token=bogus"):
+                pass
+
+    def test_accepts_valid_token(self, auth_ws_client: TestClient):
+        from couch_hound.api.auth import create_access_token
+
+        token = create_access_token("admin")
+        with auth_ws_client.websocket_connect(f"/ws/events?token={token}") as ws:
             assert ws is not None
 
 

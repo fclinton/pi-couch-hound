@@ -48,12 +48,6 @@ async def get_status(request: Request) -> StatusResponse:
     )
 
 
-@router.get("/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint for CI/CD and monitoring."""
-    return {"status": "ok"}
-
-
 @router.post("/test-actions")
 async def test_all_actions(request: Request) -> TestAllActionsResponse:
     """Fire all enabled actions once for testing without a real detection."""

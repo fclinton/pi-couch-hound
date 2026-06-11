@@ -136,18 +136,26 @@ def test_auth_status_authenticated(auth_client: TestClient) -> None:
 
 
 def test_auth_status_unauthenticated(auth_client: TestClient) -> None:
-    """Auth status without a token returns 401 when auth is enabled."""
+    """Auth status without a token reports enabled-but-not-authenticated.
+
+    The status endpoint must stay reachable without credentials so the SPA can
+    discover that a login is required.
+    """
     response = auth_client.get("/api/auth/status")
-    assert response.status_code == 401
+    assert response.status_code == 200
+    data = response.json()
+    assert data["auth_enabled"] is True
+    assert data["authenticated"] is False
 
 
 def test_auth_status_invalid_token(auth_client: TestClient) -> None:
-    """Auth status with an invalid token returns 401."""
+    """Auth status with an invalid token reports not-authenticated, not 401."""
     response = auth_client.get(
         "/api/auth/status",
         headers={"Authorization": "Bearer invalid.token.here"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
 
 
 # ── POST /api/auth/change-password ──

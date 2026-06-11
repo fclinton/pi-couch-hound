@@ -30,7 +30,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     return <Navigate to="/setup" replace />;
   }
 
-  if (data?.auth_enabled && !token) {
+  // Fail closed: if the status check is enabled-and-unauthenticated, or it
+  // failed to load at all (data undefined), require login rather than exposing
+  // the protected UI.
+  if (!data || (data.auth_enabled && !token)) {
     return <Navigate to="/login" replace />;
   }
 

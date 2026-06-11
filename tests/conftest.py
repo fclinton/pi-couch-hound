@@ -17,6 +17,11 @@ def app_config() -> AppConfig:
 
 @pytest.fixture
 def client() -> TestClient:
-    """Return a FastAPI test client."""
+    """Return a FastAPI test client.
+
+    The lifespan is not entered, so app state is seeded with a default config
+    (auth disabled) that the auth dependency needs to evaluate requests.
+    """
     app = create_app()
+    app.state.config = AppConfig()
     return TestClient(app)

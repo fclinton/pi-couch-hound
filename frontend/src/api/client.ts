@@ -1,4 +1,4 @@
-import { getToken } from "@/stores/authStore";
+import { getToken, clearToken } from "@/stores/authStore";
 
 const BASE_URL = "/api";
 
@@ -47,7 +47,20 @@ export async function apiFetch<T>(
         if (e instanceof ApiValidationError) throw e;
       }
     }
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    // An expired/invalid session token: clear it and send the user to login.
+    // Only act when a token is actually present so failed logins (which also
+    // return 401) don't trigger a redirect loop on the login page.
+    if (res.status === 401 && getToken()) {
+      clearToken();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+    }
+    const detail = await res
+      .json()
+      .then((b) => (typeof b?.detail === "string" ? b.detail : null))
+      .catch(() => null);
+    throw new Error(detail ?? `API error: ${res.status} ${res.statusText}`);
   }
 
   return res.json() as Promise<T>;

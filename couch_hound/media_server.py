@@ -21,14 +21,28 @@ from starlette.routing import Route
 logger = logging.getLogger(__name__)
 
 
+# Only audio files are ever served to Chromecast devices; restricting the
+# extension set keeps this unauthenticated port from being a general file reader.
+_ALLOWED_MEDIA_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".aac"}
+
+
 async def _serve_media(request: Request) -> Response:
-    """Serve a local file by its path."""
+    """Serve a local audio file confined to the configured media root."""
+    media_root: Path = request.app.state.media_root
     file_path = request.path_params["file_path"]
-    resolved = Path(file_path)
-    if not resolved.is_file():
+
+    # Resolve the request against the media root and confirm it does not escape
+    # it (rejects absolute paths and ../ traversal). resolve() collapses '..'.
+    candidate = (media_root / file_path).resolve()
+    if not candidate.is_relative_to(media_root):
         return JSONResponse({"detail": "Not found"}, status_code=404)
-    media_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
-    return FileResponse(resolved, media_type=media_type)
+    if candidate.suffix.lower() not in _ALLOWED_MEDIA_EXTENSIONS:
+        return JSONResponse({"detail": "Unsupported media type"}, status_code=415)
+    if not candidate.is_file():
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    media_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
+    return FileResponse(candidate, media_type=media_type)
 
 
 async def _catch_all(request: Request) -> Response:
@@ -40,7 +54,9 @@ async def _catch_all(request: Request) -> Response:
     return RedirectResponse(url=target, status_code=307)
 
 
-def _create_media_app(main_port: int, ssl_enabled: bool) -> Starlette:
+def _create_media_app(
+    main_port: int, ssl_enabled: bool, media_root: Path | None = None
+) -> Starlette:
     """Build the Starlette app used by the media server."""
     app = Starlette(
         routes=[
@@ -50,6 +66,7 @@ def _create_media_app(main_port: int, ssl_enabled: bool) -> Starlette:
     )
     app.state.main_port = main_port
     app.state.ssl_enabled = ssl_enabled
+    app.state.media_root = (media_root or Path.cwd()).resolve()
     return app
 
 
@@ -65,9 +82,10 @@ async def start_media_server(
     media_port: int,
     main_port: int,
     ssl_enabled: bool,
+    media_root: Path | None = None,
 ) -> asyncio.Task[None]:
     """Start the HTTP-only media server and return the running task."""
-    app = _create_media_app(main_port, ssl_enabled)
+    app = _create_media_app(main_port, ssl_enabled, media_root)
     config = uvicorn.Config(
         app,
         host="0.0.0.0",

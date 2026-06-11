@@ -13,11 +13,31 @@ import numpy.typing as npt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from couch_hound.api.auth import is_token_valid
 from couch_hound.detector import Detection, SnakeDebugInfo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# WebSocket close code for policy violation (RFC 6455) — used for auth failures.
+WS_POLICY_VIOLATION = 1008
+
+
+async def _authorize_ws(websocket: WebSocket) -> bool:
+    """Reject the connection if auth is enabled and no valid token is supplied.
+
+    The token is read from the ``token`` query parameter, since browsers cannot
+    set an Authorization header when opening a WebSocket. Returns True if the
+    connection may proceed.
+    """
+    config = websocket.app.state.config
+    token = websocket.query_params.get("token")
+    if is_token_valid(config, token):
+        return True
+    await websocket.close(code=WS_POLICY_VIOLATION)
+    return False
+
 
 # JPEG encode quality for stream frames
 JPEG_QUALITY = 70
@@ -275,6 +295,8 @@ def get_system_metrics() -> dict[str, Any]:
 @router.websocket("/ws/stream")
 async def ws_stream(websocket: WebSocket) -> None:
     """Live MJPEG stream endpoint. Frames are pushed by the pipeline stream loop."""
+    if not await _authorize_ws(websocket):
+        return
     manager: ConnectionManager = websocket.app.state.ws_manager
     await manager.connect(websocket, "stream")
     try:
@@ -290,6 +312,8 @@ async def ws_stream(websocket: WebSocket) -> None:
 @router.websocket("/ws/events")
 async def ws_events(websocket: WebSocket) -> None:
     """Real-time detection event push endpoint."""
+    if not await _authorize_ws(websocket):
+        return
     manager: ConnectionManager = websocket.app.state.ws_manager
     await manager.connect(websocket, "events")
     try:
@@ -304,6 +328,8 @@ async def ws_events(websocket: WebSocket) -> None:
 @router.websocket("/ws/status")
 async def ws_status(websocket: WebSocket) -> None:
     """Periodic system status updates (CPU, mem, temp, pipeline state)."""
+    if not await _authorize_ws(websocket):
+        return
     manager: ConnectionManager = websocket.app.state.ws_manager
     await manager.connect(websocket, "status")
     try:

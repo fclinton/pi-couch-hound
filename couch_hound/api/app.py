@@ -10,12 +10,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from couch_hound import __version__
+from couch_hound.api.auth import init_jwt_secret, require_auth
 from couch_hound.api.websocket import ConnectionManager
 from couch_hound.config import CONFIG_PATH, AppConfig, load_config
 from couch_hound.database import EventDatabase
@@ -30,6 +32,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown."""
+    # Ensure a per-install JWT signing secret exists before serving requests.
+    init_jwt_secret()
+
     # Startup: load config and store in app state
     try:
         config = load_config()
@@ -86,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             media_port=config.web.media_port,
             main_port=config.web.port,
             ssl_enabled=config.web.ssl.enabled,
+            media_root=Path.cwd(),
         )
     except Exception:
         logger.warning(
@@ -140,6 +146,11 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+    @app.get("/api/health", tags=["system"])
+    async def health_check() -> dict[str, str]:
+        """Unauthenticated health check for CI/CD and monitoring."""
+        return {"status": "ok"}
+
     # Register API routes
     from couch_hound.api.routes_actions import router as actions_router
     from couch_hound.api.routes_auth import router as auth_router
@@ -155,18 +166,21 @@ def create_app() -> FastAPI:
     from couch_hound.api.routes_upload import router as upload_router
     from couch_hound.api.websocket import router as ws_router
 
-    app.include_router(system_router, prefix="/api")
+    # Auth is enforced at the router level so that new endpoints are protected
+    # by default. require_auth is a no-op when auth is disabled in config.
+    protected = [Depends(require_auth)]
+    app.include_router(system_router, prefix="/api", dependencies=protected)
     app.include_router(auth_router, prefix="/api")
-    app.include_router(config_router, prefix="/api")
-    app.include_router(actions_router, prefix="/api")
-    app.include_router(chromecast_router, prefix="/api")
-    app.include_router(update_router, prefix="/api")
-    app.include_router(training_router, prefix="/api")
-    app.include_router(upload_router, prefix="/api")
-    app.include_router(events_router, prefix="/api")
-    app.include_router(logs_router, prefix="/api")
-    app.include_router(roi_router, prefix="/api")
-    app.include_router(snapshots_router, prefix="/api")
+    app.include_router(config_router, prefix="/api", dependencies=protected)
+    app.include_router(actions_router, prefix="/api", dependencies=protected)
+    app.include_router(chromecast_router, prefix="/api", dependencies=protected)
+    app.include_router(update_router, prefix="/api", dependencies=protected)
+    app.include_router(training_router, prefix="/api", dependencies=protected)
+    app.include_router(upload_router, prefix="/api", dependencies=protected)
+    app.include_router(events_router, prefix="/api", dependencies=protected)
+    app.include_router(logs_router, prefix="/api", dependencies=protected)
+    app.include_router(roi_router, prefix="/api", dependencies=protected)
+    app.include_router(snapshots_router, prefix="/api", dependencies=protected)
     app.include_router(ws_router)
 
     # Serve frontend static files with SPA fallback if built
@@ -183,8 +197,11 @@ class SPAStaticFiles(StaticFiles):
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:
             await super().__call__(scope, receive, send)
-        except Exception:
-            # If the file is not found, serve index.html for client-side routing
+        except StarletteHTTPException as exc:
+            # Only fall back to index.html for missing files (client-side routing).
+            # Other HTTP errors (e.g. permission denied) should surface normally.
+            if exc.status_code != 404:
+                raise
             index = Path(self.directory) / "index.html"  # type: ignore[arg-type]
             if index.is_file():
                 response = FileResponse(index)

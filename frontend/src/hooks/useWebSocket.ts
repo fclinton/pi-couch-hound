@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { getToken } from "@/stores/authStore";
 
 interface UseWebSocketOptions {
   binary?: boolean;
@@ -13,7 +14,11 @@ const RECONNECT_CAP_MS = 30_000;
 
 function buildWsUrl(path: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}${path}`;
+  // Browsers can't set an Authorization header on a WebSocket handshake, so the
+  // JWT is passed as a query parameter (the server reads it the same way).
+  const token = getToken();
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${protocol}//${window.location.host}${path}${query}`;
 }
 
 export function useWebSocket(
@@ -38,7 +43,9 @@ export function useWebSocket(
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (unmounted.current) {
+      // Ignore events from a socket that has since been replaced (e.g. a
+      // StrictMode remount or a path change created a newer connection).
+      if (unmounted.current || wsRef.current !== ws) {
         ws.close();
         return;
       }
@@ -47,13 +54,13 @@ export function useWebSocket(
     };
 
     ws.onmessage = (event: MessageEvent) => {
-      if (!unmounted.current) {
+      if (!unmounted.current && wsRef.current === ws) {
         setLastMessage(event);
       }
     };
 
     ws.onclose = () => {
-      if (unmounted.current) return;
+      if (unmounted.current || wsRef.current !== ws) return;
       setConnected(false);
       reconnectTimer.current = setTimeout(() => {
         reconnectDelay.current = Math.min(
